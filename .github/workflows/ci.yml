@@ -1,0 +1,23 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Types must regenerate cleanly from the committed spec, and the
+      # committed generated file must match (no drift between the two).
+      - run: npm run generate
+      - run: git diff --exit-code src/generated/openapi.d.ts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

@@ -1,0 +1,35 @@
+{
+  "name": "thicket-sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript client for the Thicket API (thickethq.com): projects, to-dos, messages, docs, boards, calendar, chat, people, search.",
+  "keywords": ["thicket", "api", "sdk", "project-management"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeexplorio/thicket-sdk.git"
+  },
+  "homepage": "https://www.thickethq.com/developers/api",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "openapi.json", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "generate": "openapi-typescript openapi.json -o src/generated/openapi.d.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run generate && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
