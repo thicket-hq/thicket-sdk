@@ -13025,6 +13025,156 @@
         }
       }
     },
+    "/api/v1/cli/authorizations": {
+      "post": {
+        "operationId": "createCliAuthorization",
+        "tags": [
+          "Authorization"
+        ],
+        "summary": "Approve a CLI sign-in (session-only)",
+        "description": "The approve half of `thicket auth login`: records a PKCE-style grant for the presented challenge and returns a single-use code (10-minute expiry) for the CLI's loopback callback. Session-only like token minting: bearer calls receive 403 `session_required`. The code itself is not a credential; it only pays out at the exchange to whoever holds the matching `code_verifier`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "challenge",
+                  "device_name"
+                ],
+                "properties": {
+                  "challenge": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43}$",
+                    "description": "base64url(SHA-256(code_verifier)) — the PKCE S256 transform"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "read",
+                      "full"
+                    ],
+                    "default": "read"
+                  },
+                  "device_name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "description": "Shown on the approve page and baked into the minted token's name"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The single-use authorization code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "expires_at"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/cli/token": {
+      "post": {
+        "operationId": "exchangeCliAuthorization",
+        "tags": [
+          "Authorization"
+        ],
+        "summary": "Exchange a CLI authorization code for a token",
+        "security": [],
+        "description": "The exchange half of `thicket auth login`. Anonymous by design: the code plus the PKCE `code_verifier` are the credential. Any exchange attempt burns the code (single use), and refusals are indistinguishable (unknown, expired, used, or mismatched verifier all answer 401 `invalid_grant`). The response's `token` field is the only time the minted personal access token exists in plaintext. Rate-limited per caller address; 429 carries Retry-After.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "code_verifier"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "code_verifier": {
+                    "type": "string",
+                    "minLength": 43,
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The minted token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PersonalAccessToken"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "token"
+                      ],
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "description": "The secret; shown exactly once"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
     "/api/v1/me/preferences": {
       "get": {
         "operationId": "getPreferences",
@@ -13262,7 +13412,8 @@
                       "read",
                       "full"
                     ],
-                    "default": "full"
+                    "default": "read",
+                    "description": "Defaults to read (GET/HEAD only), matching the CLI; pick full deliberately for writes"
                   },
                   "expires_at": {
                     "type": [
@@ -14091,7 +14242,34 @@
           "organizations": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/OrganizationSummary"
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/OrganizationSummary"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "membership_id",
+                    "role"
+                  ],
+                  "properties": {
+                    "membership_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Who the caller is inside this organization — the id assignee pickers and attribution speak"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "owner",
+                        "admin",
+                        "member",
+                        "client"
+                      ]
+                    }
+                  }
+                }
+              ]
             }
           },
           "scope": {

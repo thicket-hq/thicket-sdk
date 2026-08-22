@@ -2953,6 +2953,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cli/authorizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a CLI sign-in (session-only)
+         * @description The approve half of `thicket auth login`: records a PKCE-style grant for the presented challenge and returns a single-use code (10-minute expiry) for the CLI's loopback callback. Session-only like token minting: bearer calls receive 403 `session_required`. The code itself is not a credential; it only pays out at the exchange to whoever holds the matching `code_verifier`.
+         */
+        post: operations["createCliAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cli/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a CLI authorization code for a token
+         * @description The exchange half of `thicket auth login`. Anonymous by design: the code plus the PKCE `code_verifier` are the credential. Any exchange attempt burns the code (single use), and refusals are indistinguishable (unknown, expired, used, or mismatched verifier all answer 401 `invalid_grant`). The response's `token` field is the only time the minted personal access token exists in plaintext. Rate-limited per caller address; 429 carries Retry-After.
+         */
+        post: operations["exchangeCliAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/preferences": {
         parameters: {
             query?: never;
@@ -3280,7 +3320,15 @@ export interface components {
                 /** @description Stable user id; names live on People endpoints */
                 id: string;
             };
-            organizations: components["schemas"]["OrganizationSummary"][];
+            organizations: (components["schemas"]["OrganizationSummary"] & {
+                /**
+                 * Format: uuid
+                 * @description Who the caller is inside this organization — the id assignee pickers and attribution speak
+                 */
+                membership_id: string;
+                /** @enum {string} */
+                role: "owner" | "admin" | "member" | "client";
+            })[];
             /** @enum {string} */
             scope: "read" | "full";
             /**
@@ -11299,6 +11347,80 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
         };
     };
+    createCliAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description base64url(SHA-256(code_verifier)) — the PKCE S256 transform */
+                    challenge: string;
+                    /**
+                     * @default read
+                     * @enum {string}
+                     */
+                    scope?: "read" | "full";
+                    /** @description Shown on the approve page and baked into the minted token's name */
+                    device_name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The single-use authorization code */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: string;
+                        /** Format: date-time */
+                        expires_at: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    exchangeCliAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                    code_verifier: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The minted token */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalAccessToken"] & {
+                        /** @description The secret; shown exactly once */
+                        token: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Validation"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
     getPreferences: {
         parameters: {
             query?: never;
@@ -11441,7 +11563,8 @@ export interface operations {
                 "application/json": {
                     name: string;
                     /**
-                     * @default full
+                     * @description Defaults to read (GET/HEAD only), matching the CLI; pick full deliberately for writes
+                     * @default read
                      * @enum {string}
                      */
                     scope?: "read" | "full";
