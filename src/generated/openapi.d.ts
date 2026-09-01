@@ -136,6 +136,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the organization's AI agents
+         * @description Every active agent membership with its operators and presence. Any member may read this; the token summary is included for owners and admins only. An agent is a member without a seat or a sign-in: mention it, assign it, cheer it like a person; it acts only on directives from whoever may direct it.
+         */
+        get: operations["listAgents"];
+        put?: never;
+        /**
+         * Create an AI agent
+         * @description Owners and admins. Creates a member of kind `agent` (no seat, no sign-in) whose first operator is the creator unless `operator_ids` is given. Mint its token with `POST /agents/{agentId}/token`.
+         */
+        post: operations["createAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/agents/{agentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an AI agent */
+        get: operations["getAgent"];
+        put?: never;
+        post?: never;
+        /**
+         * Deactivate an agent
+         * @description Owners and admins. Revokes its token and soft-removes the membership (past work keeps its name). Reversible with PATCH `{active: true}`.
+         */
+        delete: operations["deactivateAgent"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename an agent, change who may direct it, or reactivate it
+         * @description Owners and admins. `active: true` reactivates a deactivated agent (a new token must then be minted).
+         */
+        patch: operations["updateAgent"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/agents/{agentId}/operators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace who may direct an agent
+         * @description Owners and admins. Operators must be current non-client people of this organization; unknown or ineligible ids are refused, never dropped.
+         */
+        put: operations["setAgentOperators"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/agents/{agentId}/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint or rotate the agent's token
+         * @description Owners and admins, from a signed-in session only (a bearer gets 403 `session_required`, like every token-management route). Any live token for the agent is revoked first. The plaintext is returned exactly once.
+         */
+        post: operations["mintAgentToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/billing": {
         parameters: {
             query?: never;
@@ -851,7 +940,7 @@ export interface paths {
         };
         /**
          * Cheers you have received and given
-         * @description `{received, given}`, each newest first. Cheer notifications are their own channel, gated solely by the `notify_cheers` preference and never by the notify scope.
+         * @description `{received, given}`, each newest first. Cheer notifications are their own channel, gated solely by the `notify_cheers` preference and never by the notify scope. `since` restricts both lists to cheers created after that instant: an agent runtime's cheer-trigger cursor (a `redo` on its work), with `cheerer_membership_id` to gate on who cheered.
          */
         get: operations["listMyCheers"];
         put?: never;
@@ -999,7 +1088,7 @@ export interface paths {
         };
         /**
          * Your notification tray
-         * @description `{unread_count, notifications}`, newest first. Event and due-date reminders sweep lazily on every read (the count-only arm included) with DB-level dedupe, so reminder rows land exactly once even under concurrent reads. Rows carry `bulletin_id` for platform announcements (action `announced`, actor-less) and `bundle_count` for chat rows: lines folded into one entry while it stayed unread. Project-chat rows use action `chatted` for the push-worthy idle-edge delivery and `chat_activity` for the quiet bundled tray row, both pointing at the room recording; visiting the room marks them read.
+         * @description `{unread_count, notifications}`, newest first. Event and due-date reminders sweep lazily on every read (the count-only arm included) with DB-level dedupe, so reminder rows land exactly once even under concurrent reads. Rows carry `bulletin_id` for platform announcements (action `announced`, actor-less) and `bundle_count` for chat rows: lines folded into one entry while it stayed unread. Project-chat rows use action `chatted` for the push-worthy idle-edge delivery and `chat_activity` for the quiet bundled tray row, both pointing at the room recording; visiting the room marks them read. **Agent inbox (cursor reads):** pass `since` (the last row's `created_at`) and `after` (its id) to walk forward, oldest first; the response then carries `next_cursor` to pass next time. Rows carry the actor's membership id and role, and for agent memberships the server's trust verdicts: `from_operator` (the actor is one of the agent's operators) and `directive` (a mention or assignment from someone allowed to direct it). `presence=true` renews an agent's presence lease.
          */
         get: operations["listNotifications"];
         /**
@@ -1032,6 +1121,26 @@ export interface paths {
          * @description `{read: false}` returns it to the tray's "New for you" section. Unknown ids are a quiet no-op.
          */
         patch: operations["markNotificationRead"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/notifications/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream your notifications (Server-Sent Events)
+         * @description The live half of the agent inbox: a `text/event-stream` that delivers each new notification row as it lands (`event: notification`, `id:` = the row id, `data:` = the same JSON as the tray), sends `: ping` every 15 seconds, and ends with `event: reconnect` after ten minutes; reconnect with `since`/`after` (or `Last-Event-ID`) to continue. Opens with `event: ready` carrying the cursor. Without a cursor the stream starts now, never replaying history. Renews the caller's agent presence lease while connected. The agent connects out; Thicket never calls in.
+         */
+        get: operations["streamNotifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/{orgSlug}/my/snoozes": {
@@ -1513,6 +1622,30 @@ export interface paths {
          * @description Any field, including `position` (finite number, fractional ok: the drag-reorder contract). Provide at least one field or receive 422. Clients receive 403.
          */
         patch: operations["updateProjectLink"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/links/{linkId}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload or replace a project link's image
+         * @description Multipart `image` field, 10 MB or smaller, any decodable image (re-encoded to a square 160px webp). Clients receive 403, like every other link write.
+         */
+        put: operations["setProjectLinkImage"];
+        post?: never;
+        /**
+         * Remove a project link's image
+         * @description Back to the service tile. Clients receive 403.
+         */
+        delete: operations["removeProjectLinkImage"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/{orgSlug}/projects/{projectId}/logo": {
@@ -2993,6 +3126,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/connected-apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List connected apps
+         * @description The caller's OAuth grants (the MCP connector's Connected apps surface), newest first. Session-only: bearer callers get 403 `session_required`, so a leaked token cannot enumerate the account's standing grants.
+         */
+        get: operations["listConnectedApps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/connected-apps/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect an app
+         * @description Revokes the OAuth grant: its access and refresh tokens die immediately. Session-only.
+         */
+        delete: operations["revokeConnectedApp"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/preferences": {
         parameters: {
             query?: never;
@@ -3057,6 +3230,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your non-secret sign-in security state
+         * @description Session-only account-scoped enrollment bootstrap that remains reachable while an organization requires 2FA. It reveals only whether 2FA and a password are active plus a human-readable social sign-in label; it never returns linked-account identifiers, secrets, or password material. Personal access tokens receive 403 session_required.
+         */
+        get: operations["getSecurityState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/tokens": {
         parameters: {
             query?: never;
@@ -3110,13 +3303,13 @@ export interface paths {
         };
         /**
          * List your organizations
-         * @description Every organization the credential's user belongs to, ordered by name. Cancelled-in-grace organizations are excluded (see /api/v1/orgs/cancelled). `sole_owner` means the caller is the org's only active owner, which blocks account deletion.
+         * @description Every organization the credential's user belongs to, ordered by name. Cancelled-in-grace organizations are excluded (see /api/v1/orgs/cancelled). `sole_owner` means the caller is the org's only active owner, which blocks account deletion. `requires_two_factor_setup` lets interactive clients route to enrollment before opening org data; clients are exempt.
          */
         get: operations["listOrganizations"];
         put?: never;
         /**
          * Create an organization
-         * @description The caller becomes its owner. The slug is generated server-side ({slugified-name}-{6-char suffix}) and the org starts in the same server-decided state as web onboarding: a 14-day Pro trial with no card, plus the seeded Getting Started sample project. Deliberately takes no plan or billing parameter: plan selection is never a client concern.
+         * @description The caller becomes its owner. The slug is generated server-side ({slugified-name}-{6-char suffix}) and the org starts in the same server-decided state as web onboarding: a 30-day Pro trial with no card, plus the seeded Getting Started sample project. Deliberately takes no plan or billing parameter: plan selection is never a client concern.
          */
         post: operations["createOrganization"];
         delete?: never;
@@ -3328,6 +3521,11 @@ export interface components {
                 membership_id: string;
                 /** @enum {string} */
                 role: "owner" | "admin" | "member" | "client";
+                /**
+                 * @description "agent" when this credential belongs to an AI agent membership
+                 * @enum {string}
+                 */
+                membership_kind: "person" | "agent";
             })[];
             /** @enum {string} */
             scope: "read" | "full";
@@ -3352,6 +3550,20 @@ export interface components {
             last_used_at?: string | null;
             /** Format: date-time */
             expires_at?: string | null;
+            /** Format: date-time */
+            revoked_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ConnectedApp: {
+            /** Format: uuid */
+            id: string;
+            client_name: string;
+            client_uri?: string | null;
+            /** @description Space-separated OAuth scopes, e.g. `thicket.read thicket.write offline_access`. */
+            scope: string;
+            /** Format: date-time */
+            last_used_at?: string | null;
             /** Format: date-time */
             revoked_at?: string | null;
             /** Format: date-time */
@@ -3664,6 +3876,11 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             cheerer_name?: string | null;
+            /**
+             * Format: uuid
+             * @description Who cheered, by membership id
+             */
+            cheerer_membership_id: string;
             /** Format: uuid */
             recording_id: string;
             recording_type: components["schemas"]["RecordingType"];
@@ -3728,6 +3945,23 @@ export interface components {
             bulletin_id?: string | null;
             /** @description null for actor-less rows (announcements, reminders) */
             actor_name?: string | null;
+            /** @description The notified-about recording's type */
+            recording_type?: string | null;
+            /** Format: uuid */
+            recording_parent_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Who acted, by the id mentions, assignees, and creators speak; null for actor-less rows
+             */
+            actor_membership_id?: string | null;
+            /** @description owner, admin, member, or client; agent runtimes exclude client authors fail-closed */
+            actor_role?: string | null;
+            /** @description person or agent */
+            actor_kind?: string | null;
+            /** @description Agent recipients only: whether the actor is one of the agent's operators. Null for people. */
+            from_operator?: boolean | null;
+            /** @description Agent recipients only: true when the row addresses the agent (mentioned or assigned) from someone allowed to direct it under its policy. Null for people. */
+            directive?: boolean | null;
             /** Format: date-time */
             read_at?: string | null;
             /** Format: date-time */
@@ -3744,6 +3978,12 @@ export interface components {
             note?: string | null;
             /** Format: date-time */
             resurface_at: string;
+        };
+        SecurityState: {
+            two_factor_enabled: boolean;
+            has_password: boolean;
+            /** @description Google, Apple, Google or Apple, or null */
+            sign_in_label: string | null;
         };
         /** @description The user's personal preferences, one document across organizations. Field families: locale and display (timezone: a valid IANA zone, time_format 12h|24h, week_start sunday…saturday, theme light|dark|system, background_tint); notification routing (notify_scope everything|mentions, though direct actions like mentions, assignments, pings, and approvals always come through; email_notifications gates email copies; notifications_silenced is the in-app "Shhh" mute with the badge hidden; desktop_notifications; unread_badge for the "(N)" tab title); quiet hours (work_hours_enabled plus work_hours as per-day {start, end} HH:MM windows or null; catch_up_summary opts into one end-of-day summary of held email); email channels (notify_event_reminders, notify_assignment_reminders for due-soon reminders, weekly_assignments_email for the Monday summary, announcement_emails, onboarding_emails, notify_cheers, activity_digest); profile extras (out_of_office_start/out_of_office_end ISO dates, location, current_status); view choices (todos_view list|cards, docs_folders_open). GET returns every field; PATCH accepts any subset. */
         Preferences: Record<string, never>;
@@ -3762,6 +4002,8 @@ export interface components {
             logo?: string;
             /** @description The caller is this org's only active owner */
             sole_owner: boolean;
+            /** @description This non-client caller must enroll in 2FA before accessing org-scoped routes */
+            requires_two_factor_setup: boolean;
         };
         CancelledOrg: {
             /** Format: uuid */
@@ -3779,6 +4021,49 @@ export interface components {
             /** @description True where the caller is an owner */
             can_restore: boolean;
         };
+        /** @description An AI agent membership: mentionable and assignable like a person, no seat, no sign-in, directed by its operators. */
+        Agent: {
+            /** Format: uuid */
+            membership_id: string;
+            name: string;
+            image: string | null;
+            role: components["schemas"]["OrgRole"];
+            /** @enum {string} */
+            kind: "agent";
+            /**
+             * @description Whose mentions and assignments count as directives: its operators (default) or any non-client member
+             * @enum {string}
+             */
+            directable_by: "operators" | "members";
+            /** @description True while the agent's runtime holds a fresh presence lease (90 seconds) */
+            active: boolean;
+            /** Format: date-time */
+            presence_at: string | null;
+            operators: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string | null;
+            }[];
+            /** @description The live token's summary (owners and admins only; null when none, or for other viewers). The secret itself is returned once, by POST /agents/{agentId}/token. */
+            token: {
+                /** Format: uuid */
+                id?: string;
+                token_prefix?: string;
+                /** @enum {string} */
+                scope?: "read" | "full";
+                /** Format: date-time */
+                last_used_at?: string | null;
+                /** Format: date-time */
+                created_at?: string;
+            } | null;
+            /**
+             * Format: date-time
+             * @description Set when deactivated
+             */
+            removed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
         Person: {
             /** Format: uuid */
             membership_id: string;
@@ -3788,6 +4073,13 @@ export interface components {
             /** @description Same-origin avatar path or external SSO URL; null means render an initials disc */
             image?: string | null;
             role: components["schemas"]["OrgRole"];
+            /**
+             * @description Agents are members without a seat or a sign-in, directed by their operators (see /agents)
+             * @enum {string}
+             */
+            kind?: "person" | "agent";
+            /** @description Agents only: true while the agent's runtime is listening. Null for people. */
+            active?: boolean | null;
             title?: string | null;
             /** Format: uuid */
             company_id?: string | null;
@@ -4120,6 +4412,11 @@ export interface components {
             recording_title?: string | null;
             /** @description A RecordingType value, or null for project-level events */
             recording_type?: string | null;
+            /**
+             * Format: uuid
+             * @description The actor's membership id
+             */
+            actor_id?: string | null;
             actor_name?: string | null;
             /** Format: date-time */
             created_at: string;
@@ -4237,6 +4534,10 @@ export interface components {
             /** @description Author byline; survives the person leaving the org */
             creator_name?: string | null;
             creator_image?: string | null;
+            /** @description Membership ids currently assigned (to-dos, cards, events); [] otherwise */
+            assignee_ids?: string[];
+            /** @description Every membership @-mentioned in the content, by id: the corroboration fact an agent runtime checks */
+            mentioned_membership_ids?: string[];
             /** @description Files embedded in the rich text; always present, [] when none */
             content_attachments: components["schemas"]["RecordingContentAttachment"][];
         };
@@ -4734,6 +5035,12 @@ export interface operations {
                 starred?: "1";
                 /** @description Only events after this instant */
                 since?: string;
+                /** @description Comma list of event actions, e.g. card_added,move (a container-watch poll) */
+                action?: string;
+                /** @description Only events about recordings of this type */
+                recording_type?: string;
+                /** @description Only events about recordings inside this container (a column, a list): the container-watch poll */
+                parent_id?: string;
                 /** @description Keyword filter: title, actor name, or content text */
                 q?: string;
             };
@@ -4756,6 +5063,249 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** @enum {string} */
+                    directable_by?: "operators" | "members";
+                    operator_ids?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    getAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The agent's membership id */
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deactivateAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deactivated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    /** @enum {string} */
+                    directable_by?: "operators" | "members";
+                    /** @enum {boolean} */
+                    active?: true;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    setAgentOperators: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    operator_ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The new operator list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        operators: {
+                            /** Format: uuid */
+                            membership_id: string;
+                            name: string | null;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    mintAgentToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default full
+                     * @enum {string}
+                     */
+                    scope?: "read" | "full";
+                };
+            };
+        };
+        responses: {
+            /** @description Minted */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The secret, shown once */
+                        token: string;
+                        /** Format: uuid */
+                        id: string;
+                        token_prefix: string;
+                        /** @enum {string} */
+                        scope: "read" | "full";
+                        /** Format: date-time */
+                        created_at: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
         };
     };
@@ -6380,7 +6930,10 @@ export interface operations {
     };
     listMyCheers: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only cheers created after this instant */
+                since?: string;
+            };
             header?: never;
             path: {
                 /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
@@ -6647,6 +7200,16 @@ export interface operations {
                 unread?: boolean;
                 /** @description true: return {unread_count} alone (the mobile tab badge's poll; the reminder sweeps still run) */
                 count_only?: boolean;
+                /** @description Cursor: only rows created after this instant; switches the order to oldest first */
+                since?: string;
+                /** @description Cursor tie-breaker: the id of the last row read (pair with since) */
+                after?: string;
+                /** @description Comma list of actions to include, e.g. mentioned,assigned */
+                action?: string;
+                /** @description Page size (default 50) */
+                limit?: number;
+                /** @description true: renew the caller's agent presence lease (agents only; a no-op for people) */
+                presence?: boolean;
             };
             header?: never;
             path: {
@@ -6666,6 +7229,13 @@ export interface operations {
                     "application/json": {
                         unread_count: number;
                         notifications?: components["schemas"]["NotificationRow"][];
+                        /** @description Present on cursor reads only: pass these as since/after on the next call */
+                        next_cursor?: {
+                            /** Format: date-time */
+                            since: string | null;
+                            /** Format: uuid */
+                            after: string | null;
+                        };
                     };
                 };
             };
@@ -6736,6 +7306,39 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    streamNotifications: {
+        parameters: {
+            query?: {
+                /** @description Resume cursor (the last row's created_at) */
+                since?: string;
+                /** @description Resume cursor tie-breaker (the last row's id) */
+                after?: string;
+                /** @description Comma list of actions to include */
+                action?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An open event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
         };
     };
@@ -7659,6 +8262,12 @@ export interface operations {
                 limit?: number;
                 /** @description Only events at or after this instant */
                 since?: string;
+                /** @description Comma list of event actions, e.g. card_added,move (a container-watch poll) */
+                action?: string;
+                /** @description Only events about recordings of this type */
+                recording_type?: string;
+                /** @description Only events about recordings inside this container (a column, a list): the container-watch poll */
+                parent_id?: string;
                 /** @description Keyword filter */
                 q?: string;
             };
@@ -7951,6 +8560,66 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
+        };
+    };
+    setProjectLinkImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+                linkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    image: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Image stored */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    removeProjectLinkImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+                linkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Image removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     uploadProjectLogo: {
@@ -9368,7 +10037,10 @@ export interface operations {
     };
     listRecordingEvents: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only changes after this instant */
+                since?: string;
+            };
             header?: never;
             path: {
                 /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
@@ -11421,6 +12093,51 @@ export interface operations {
             429: components["responses"]["RateLimited"];
         };
     };
+    listConnectedApps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grants, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedApp"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    revokeConnectedApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getPreferences: {
         parameters: {
             query?: never;
@@ -11527,6 +12244,28 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getSecurityState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Security state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityState"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listTokens: {

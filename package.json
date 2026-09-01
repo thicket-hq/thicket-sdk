@@ -1,6 +1,6 @@
 {
   "name": "thicket-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Official TypeScript client for the Thicket API (thickethq.com): projects, to-dos, messages, docs, boards, calendar, chat, people, search.",
   "keywords": [
     "thicket",

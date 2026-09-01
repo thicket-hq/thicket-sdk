@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Thicket",
-    "version": "2026-08-21",
+    "version": "2026-08-29",
     "description": "Thicket's versioned REST API. The web app runs on the same routes, so everything the product does is here. Human-readable reference: https://www.thickethq.com/developers/api",
     "contact": {
       "name": "Thicket support",
@@ -482,6 +482,31 @@
             "description": "Only events after this instant"
           },
           {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma list of event actions, e.g. card_added,move (a container-watch poll)"
+          },
+          {
+            "name": "recording_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only events about recordings of this type"
+          },
+          {
+            "name": "parent_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Only events about recordings inside this container (a column, a list): the container-watch poll"
+          },
+          {
             "name": "q",
             "in": "query",
             "schema": {
@@ -506,6 +531,478 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/agents": {
+      "get": {
+        "operationId": "listAgents",
+        "tags": [
+          "People"
+        ],
+        "summary": "List the organization's AI agents",
+        "description": "Every active agent membership with its operators and presence. Any member may read this; the token summary is included for owners and admins only. An agent is a member without a seat or a sign-in: mention it, assign it, cheer it like a person; it acts only on directives from whoever may direct it.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Agent"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAgent",
+        "tags": [
+          "People"
+        ],
+        "summary": "Create an AI agent",
+        "description": "Owners and admins. Creates a member of kind `agent` (no seat, no sign-in) whose first operator is the creator unless `operator_ids` is given. Mint its token with `POST /agents/{agentId}/token`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "directable_by": {
+                    "type": "string",
+                    "enum": [
+                      "operators",
+                      "members"
+                    ]
+                  },
+                  "operator_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 200
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/agents/{agentId}": {
+      "get": {
+        "operationId": "getAgent",
+        "tags": [
+          "People"
+        ],
+        "summary": "Get an AI agent",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The agent's membership id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateAgent",
+        "tags": [
+          "People"
+        ],
+        "summary": "Rename an agent, change who may direct it, or reactivate it",
+        "description": "Owners and admins. `active: true` reactivates a deactivated agent (a new token must then be minted).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "directable_by": {
+                    "type": "string",
+                    "enum": [
+                      "operators",
+                      "members"
+                    ]
+                  },
+                  "active": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deactivateAgent",
+        "tags": [
+          "People"
+        ],
+        "summary": "Deactivate an agent",
+        "description": "Owners and admins. Revokes its token and soft-removes the membership (past work keeps its name). Reversible with PATCH `{active: true}`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deactivated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/agents/{agentId}/operators": {
+      "put": {
+        "operationId": "setAgentOperators",
+        "tags": [
+          "People"
+        ],
+        "summary": "Replace who may direct an agent",
+        "description": "Owners and admins. Operators must be current non-client people of this organization; unknown or ineligible ids are refused, never dropped.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operator_ids"
+                ],
+                "properties": {
+                  "operator_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 200
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new operator list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "operators"
+                  ],
+                  "properties": {
+                    "operators": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "membership_id",
+                          "name"
+                        ],
+                        "properties": {
+                          "membership_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/agents/{agentId}/token": {
+      "post": {
+        "operationId": "mintAgentToken",
+        "tags": [
+          "People"
+        ],
+        "summary": "Mint or rotate the agent's token",
+        "description": "Owners and admins, from a signed-in session only (a bearer gets 403 `session_required`, like every token-management route). Any live token for the agent is revoked first. The plaintext is returned exactly once.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "read",
+                      "full"
+                    ],
+                    "default": "full"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Minted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "token",
+                    "id",
+                    "token_prefix",
+                    "scope",
+                    "created_at"
+                  ],
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "The secret, shown once"
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "token_prefix": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "read",
+                        "full"
+                      ]
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "422": {
             "$ref": "#/components/responses/Validation"
@@ -3472,10 +3969,19 @@
           "Me"
         ],
         "summary": "Cheers you have received and given",
-        "description": "`{received, given}`, each newest first. Cheer notifications are their own channel, gated solely by the `notify_cheers` preference and never by the notify scope.",
+        "description": "`{received, given}`, each newest first. Cheer notifications are their own channel, gated solely by the `notify_cheers` preference and never by the notify scope. `since` restricts both lists to cheers created after that instant: an agent runtime's cheer-trigger cursor (a `redo` on its work), with `cheerer_membership_id` to gate on who cheered.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only cheers created after this instant"
           }
         ],
         "responses": {
@@ -3935,7 +4441,7 @@
           "Notifications"
         ],
         "summary": "Your notification tray",
-        "description": "`{unread_count, notifications}`, newest first. Event and due-date reminders sweep lazily on every read (the count-only arm included) with DB-level dedupe, so reminder rows land exactly once even under concurrent reads. Rows carry `bulletin_id` for platform announcements (action `announced`, actor-less) and `bundle_count` for chat rows: lines folded into one entry while it stayed unread. Project-chat rows use action `chatted` for the push-worthy idle-edge delivery and `chat_activity` for the quiet bundled tray row, both pointing at the room recording; visiting the room marks them read.",
+        "description": "`{unread_count, notifications}`, newest first. Event and due-date reminders sweep lazily on every read (the count-only arm included) with DB-level dedupe, so reminder rows land exactly once even under concurrent reads. Rows carry `bulletin_id` for platform announcements (action `announced`, actor-less) and `bundle_count` for chat rows: lines folded into one entry while it stayed unread. Project-chat rows use action `chatted` for the push-worthy idle-edge delivery and `chat_activity` for the quiet bundled tray row, both pointing at the room recording; visiting the room marks them read. **Agent inbox (cursor reads):** pass `since` (the last row's `created_at`) and `after` (its id) to walk forward, oldest first; the response then carries `next_cursor` to pass next time. Rows carry the actor's membership id and role, and for agent memberships the server's trust verdicts: `from_operator` (the actor is one of the agent's operators) and `directive` (a mention or assignment from someone allowed to direct it). `presence=true` renews an agent's presence lease.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -3955,6 +4461,50 @@
               "type": "boolean"
             },
             "description": "true: return {unread_count} alone (the mobile tab badge's poll; the reminder sweeps still run)"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Cursor: only rows created after this instant; switches the order to oldest first"
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Cursor tie-breaker: the id of the last row read (pair with since)"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma list of actions to include, e.g. mentioned,assigned"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "description": "Page size (default 50)"
+          },
+          {
+            "name": "presence",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "true: renew the caller's agent presence lease (agents only; a no-op for people)"
           }
         ],
         "responses": {
@@ -3975,6 +4525,30 @@
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/NotificationRow"
+                      }
+                    },
+                    "next_cursor": {
+                      "type": "object",
+                      "description": "Present on cursor reads only: pass these as since/after on the next call",
+                      "required": [
+                        "since",
+                        "after"
+                      ],
+                      "properties": {
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "after": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        }
                       }
                     }
                   }
@@ -4104,6 +4678,68 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/notifications/stream": {
+      "get": {
+        "operationId": "streamNotifications",
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Stream your notifications (Server-Sent Events)",
+        "description": "The live half of the agent inbox: a `text/event-stream` that delivers each new notification row as it lands (`event: notification`, `id:` = the row id, `data:` = the same JSON as the tray), sends `: ping` every 15 seconds, and ends with `event: reconnect` after ten minutes; reconnect with `since`/`after` (or `Last-Event-ID`) to continue. Opens with `event: ready` carrying the cursor. Without a cursor the stream starts now, never replaying history. Renews the caller's agent presence lease while connected. The agent connects out; Thicket never calls in.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Resume cursor (the last row's created_at)"
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Resume cursor tie-breaker (the last row's id)"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma list of actions to include"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An open event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "422": {
             "$ref": "#/components/responses/Validation"
@@ -5810,6 +6446,31 @@
             "description": "Only events at or after this instant"
           },
           {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma list of event actions, e.g. card_added,move (a container-watch poll)"
+          },
+          {
+            "name": "recording_type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only events about recordings of this type"
+          },
+          {
+            "name": "parent_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Only events about recordings inside this container (a column, a list): the container-watch poll"
+          },
+          {
             "name": "q",
             "in": "query",
             "schema": {
@@ -6366,6 +7027,120 @@
         "responses": {
           "204": {
             "description": "Deleted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/projects/{projectId}/links/{linkId}/image": {
+      "put": {
+        "operationId": "setProjectLinkImage",
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Upload or replace a project link's image",
+        "description": "Multipart `image` field, 10 MB or smaller, any decodable image (re-encoded to a square 160px webp). Clients receive 403, like every other link write.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "image"
+                ],
+                "properties": {
+                  "image": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Image stored"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeProjectLinkImage",
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Remove a project link's image",
+        "description": "Back to the service tile. Clients receive 403.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Image removed"
           },
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
@@ -9297,6 +10072,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Only changes after this instant"
           }
         ],
         "responses": {
@@ -13175,6 +13959,72 @@
         }
       }
     },
+    "/api/v1/me/connected-apps": {
+      "get": {
+        "operationId": "listConnectedApps",
+        "tags": [
+          "Authorization"
+        ],
+        "summary": "List connected apps",
+        "description": "The caller's OAuth grants (the MCP connector's Connected apps surface), newest first. Session-only: bearer callers get 403 `session_required`, so a leaked token cannot enumerate the account's standing grants.",
+        "responses": {
+          "200": {
+            "description": "Grants, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectedApp"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/me/connected-apps/{grantId}": {
+      "delete": {
+        "operationId": "revokeConnectedApp",
+        "tags": [
+          "Authorization"
+        ],
+        "summary": "Disconnect an app",
+        "description": "Revokes the OAuth grant: its access and refresh tokens die immediately. Session-only.",
+        "parameters": [
+          {
+            "name": "grantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Disconnected"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/v1/me/preferences": {
       "get": {
         "operationId": "getPreferences",
@@ -13355,6 +14205,34 @@
         }
       }
     },
+    "/api/v1/me/security": {
+      "get": {
+        "operationId": "getSecurityState",
+        "tags": [
+          "Me"
+        ],
+        "summary": "Your non-secret sign-in security state",
+        "description": "Session-only account-scoped enrollment bootstrap that remains reachable while an organization requires 2FA. It reveals only whether 2FA and a password are active plus a human-readable social sign-in label; it never returns linked-account identifiers, secrets, or password material. Personal access tokens receive 403 session_required.",
+        "responses": {
+          "200": {
+            "description": "Security state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityState"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/me/tokens": {
       "get": {
         "operationId": "listTokens",
@@ -13509,7 +14387,7 @@
           "Organizations"
         ],
         "summary": "List your organizations",
-        "description": "Every organization the credential's user belongs to, ordered by name. Cancelled-in-grace organizations are excluded (see /api/v1/orgs/cancelled). `sole_owner` means the caller is the org's only active owner, which blocks account deletion.",
+        "description": "Every organization the credential's user belongs to, ordered by name. Cancelled-in-grace organizations are excluded (see /api/v1/orgs/cancelled). `sole_owner` means the caller is the org's only active owner, which blocks account deletion. `requires_two_factor_setup` lets interactive clients route to enrollment before opening org data; clients are exempt.",
         "responses": {
           "200": {
             "description": "Your organizations",
@@ -13535,7 +14413,7 @@
           "Organizations"
         ],
         "summary": "Create an organization",
-        "description": "The caller becomes its owner. The slug is generated server-side ({slugified-name}-{6-char suffix}) and the org starts in the same server-decided state as web onboarding: a 14-day Pro trial with no card, plus the seeded Getting Started sample project. Deliberately takes no plan or billing parameter: plan selection is never a client concern.",
+        "description": "The caller becomes its owner. The slug is generated server-side ({slugified-name}-{6-char suffix}) and the org starts in the same server-decided state as web onboarding: a 30-day Pro trial with no card, plus the seeded Getting Started sample project. Deliberately takes no plan or billing parameter: plan selection is never a client concern.",
         "requestBody": {
           "required": true,
           "content": {
@@ -14250,7 +15128,8 @@
                   "type": "object",
                   "required": [
                     "membership_id",
-                    "role"
+                    "role",
+                    "membership_kind"
                   ],
                   "properties": {
                     "membership_id": {
@@ -14266,6 +15145,14 @@
                         "member",
                         "client"
                       ]
+                    },
+                    "membership_kind": {
+                      "type": "string",
+                      "enum": [
+                        "person",
+                        "agent"
+                      ],
+                      "description": "\"agent\" when this credential belongs to an AI agent membership"
                     }
                   }
                 }
@@ -14326,6 +15213,52 @@
             "description": "Minute precision"
           },
           "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ConnectedApp": {
+        "type": "object",
+        "required": [
+          "id",
+          "client_name",
+          "scope",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "client_name": {
+            "type": "string"
+          },
+          "client_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "description": "Space-separated OAuth scopes, e.g. `thicket.read thicket.write offline_access`."
+          },
+          "last_used_at": {
             "type": [
               "string",
               "null"
@@ -15356,6 +16289,7 @@
           "id",
           "content",
           "created_at",
+          "cheerer_membership_id",
           "recording_id",
           "recording_type"
         ],
@@ -15377,6 +16311,11 @@
               "string",
               "null"
             ]
+          },
+          "cheerer_membership_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Who cheered, by membership id"
           },
           "recording_id": {
             "type": "string",
@@ -15581,6 +16520,56 @@
             ],
             "description": "null for actor-less rows (announcements, reminders)"
           },
+          "recording_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The notified-about recording's type"
+          },
+          "recording_parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "actor_membership_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Who acted, by the id mentions, assignees, and creators speak; null for actor-less rows"
+          },
+          "actor_role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "owner, admin, member, or client; agent runtimes exclude client authors fail-closed"
+          },
+          "actor_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "person or agent"
+          },
+          "from_operator": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Agent recipients only: whether the actor is one of the agent's operators. Null for people."
+          },
+          "directive": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Agent recipients only: true when the row addresses the agent (mentioned or assigned) from someone allowed to direct it under its policy. Null for people."
+          },
           "read_at": {
             "type": [
               "string",
@@ -15640,6 +16629,29 @@
           }
         }
       },
+      "SecurityState": {
+        "type": "object",
+        "required": [
+          "two_factor_enabled",
+          "has_password",
+          "sign_in_label"
+        ],
+        "properties": {
+          "two_factor_enabled": {
+            "type": "boolean"
+          },
+          "has_password": {
+            "type": "boolean"
+          },
+          "sign_in_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Google, Apple, Google or Apple, or null"
+          }
+        }
+      },
       "Preferences": {
         "type": "object",
         "description": "The user's personal preferences, one document across organizations. Field families: locale and display (timezone: a valid IANA zone, time_format 12h|24h, week_start sunday…saturday, theme light|dark|system, background_tint); notification routing (notify_scope everything|mentions, though direct actions like mentions, assignments, pings, and approvals always come through; email_notifications gates email copies; notifications_silenced is the in-app \"Shhh\" mute with the badge hidden; desktop_notifications; unread_badge for the \"(N)\" tab title); quiet hours (work_hours_enabled plus work_hours as per-day {start, end} HH:MM windows or null; catch_up_summary opts into one end-of-day summary of held email); email channels (notify_event_reminders, notify_assignment_reminders for due-soon reminders, weekly_assignments_email for the Monday summary, announcement_emails, onboarding_emails, notify_cheers, activity_digest); profile extras (out_of_office_start/out_of_office_end ISO dates, location, current_status); view choices (todos_view list|cards, docs_folders_open). GET returns every field; PATCH accepts any subset."
@@ -15661,7 +16673,8 @@
           "name",
           "slug",
           "role",
-          "sole_owner"
+          "sole_owner",
+          "requires_two_factor_setup"
         ],
         "properties": {
           "id": {
@@ -15684,6 +16697,10 @@
           "sole_owner": {
             "type": "boolean",
             "description": "The caller is this org's only active owner"
+          },
+          "requires_two_factor_setup": {
+            "type": "boolean",
+            "description": "This non-client caller must enroll in 2FA before accessing org-scoped routes"
           }
         }
       },
@@ -15733,6 +16750,135 @@
           }
         }
       },
+      "Agent": {
+        "type": "object",
+        "description": "An AI agent membership: mentionable and assignable like a person, no seat, no sign-in, directed by its operators.",
+        "required": [
+          "membership_id",
+          "name",
+          "image",
+          "role",
+          "kind",
+          "directable_by",
+          "active",
+          "presence_at",
+          "operators",
+          "token",
+          "removed_at",
+          "created_at"
+        ],
+        "properties": {
+          "membership_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/OrgRole"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "agent"
+            ]
+          },
+          "directable_by": {
+            "type": "string",
+            "enum": [
+              "operators",
+              "members"
+            ],
+            "description": "Whose mentions and assignments count as directives: its operators (default) or any non-client member"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "True while the agent's runtime holds a fresh presence lease (90 seconds)"
+          },
+          "presence_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "operators": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "membership_id",
+                "name"
+              ],
+              "properties": {
+                "membership_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "token": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The live token's summary (owners and admins only; null when none, or for other viewers). The secret itself is returned once, by POST /agents/{agentId}/token.",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "token_prefix": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "full"
+                ]
+              },
+              "last_used_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "removed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Set when deactivated"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "Person": {
         "type": "object",
         "required": [
@@ -15763,6 +16909,21 @@
           },
           "role": {
             "$ref": "#/components/schemas/OrgRole"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "person",
+              "agent"
+            ],
+            "description": "Agents are members without a seat or a sign-in, directed by their operators (see /agents)"
+          },
+          "active": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Agents only: true while the agent's runtime is listening. Null for people."
           },
           "title": {
             "type": [
@@ -16899,6 +18060,14 @@
             ],
             "description": "A RecordingType value, or null for project-level events"
           },
+          "actor_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The actor's membership id"
+          },
           "actor_name": {
             "type": [
               "string",
@@ -17326,6 +18495,22 @@
                   "string",
                   "null"
                 ]
+              },
+              "assignee_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "Membership ids currently assigned (to-dos, cards, events); [] otherwise"
+              },
+              "mentioned_membership_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "Every membership @-mentioned in the content, by id: the corroboration fact an agent runtime checks"
               },
               "content_attachments": {
                 "type": "array",
