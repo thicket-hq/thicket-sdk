@@ -1,4 +1,4 @@
-// Named exports over the spec-generated types (src/generated/openapi.d.ts,
+// Named exports over the spec-generated types (src/generated/openapi.ts,
 // produced by `npm run generate` from openapi.json at the repo root).
 // Regenerate whenever openapi.json advances; never edit the generated file.
 import type { components } from "./generated/openapi.js";
