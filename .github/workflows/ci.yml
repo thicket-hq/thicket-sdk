@@ -17,7 +17,7 @@ jobs:
       # Types must regenerate cleanly from the committed spec, and the
       # committed generated file must match (no drift between the two).
       - run: npm run generate
-      - run: git diff --exit-code src/generated/openapi.d.ts
+      - run: git diff --exit-code -- src/generated
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
