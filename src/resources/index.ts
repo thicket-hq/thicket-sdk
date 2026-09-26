@@ -11,6 +11,13 @@ import type {
   Recording,
   RecordingType,
   SearchResult,
+  TimesheetAbsenceType,
+  TimesheetApprovals,
+  TimesheetEntry,
+  TimesheetPickerItem,
+  TimesheetWeek,
+  TimesheetWeekApproval,
+  TimesheetWeekRow,
   ToolEntry,
 } from "../schemas.js";
 
@@ -46,6 +53,7 @@ export class OrgScope {
   readonly projects: ProjectsResource;
   readonly recordings: RecordingsResource;
   readonly search: SearchResource;
+  readonly timesheets: TimesheetsResource;
 
   constructor(
     private client: ThicketClient,
@@ -54,6 +62,7 @@ export class OrgScope {
     this.projects = new ProjectsResource(client, slug);
     this.recordings = new RecordingsResource(client, slug);
     this.search = new SearchResource(client, slug);
+    this.timesheets = new TimesheetsResource(client, slug);
   }
 
   /** Escape hatch for org-scoped paths without a wrapper yet. */
@@ -206,5 +215,279 @@ export class SearchResource {
     return this.client.request("GET", `/api/v1/${this.slug}/search`, {
       query: { q, ...query },
     });
+  }
+}
+
+/** The report's filters, shared by its JSON and CSV forms. */
+export type TimesheetReportQuery = {
+  /** YYYY-MM-DD; send with end_date (default: the last month). */
+  start_date?: string;
+  /** YYYY-MM-DD, at most 366 days after start_date. */
+  end_date?: string;
+  person_id?: string;
+  project_id?: string;
+  /** While approvals are on; default approved. */
+  status?: "approved" | "submitted" | "changed" | "not_submitted";
+};
+
+/** A new entry. `hours` is "1.5" or "1:30" (a number works too). */
+export type TimesheetEntryInput = {
+  /** YYYY-MM-DD. */
+  date: string;
+  hours: string | number;
+  description?: string | null;
+  /** Whose time (a membership id); owners and admins only. */
+  person_id?: string;
+};
+
+/**
+ * Timesheets: logged time on a project and its items, the report, the
+ * weekly timesheet, absence and approvals. Team only: a client gets 404
+ * from every call. Deleting an entry is permanent.
+ */
+export class TimesheetsResource {
+  constructor(
+    private client: ThicketClient,
+    private slug: string,
+  ) {}
+
+  private path(rest: string): string {
+    return `/api/v1/${this.slug}${rest}`;
+  }
+
+  /** Every counted entry in a date range, newest day first. Not paginated. */
+  report(query?: TimesheetReportQuery): Promise<TimesheetEntry[]> {
+    return this.client.request("GET", this.path("/reports/timesheet"), {
+      query,
+    });
+  }
+  /** The report as CSV: `Date,Person,Hours,Project,Item,Notes,Created[,Status]`. */
+  reportCsv(query?: TimesheetReportQuery): Promise<string> {
+    return this.client.requestText("GET", this.path("/reports/timesheet/csv"), {
+      query,
+      accept: "text/csv",
+    });
+  }
+
+  /** One page of a project's timesheet: its own time and its items'. */
+  project(
+    projectId: string,
+    query?: { page?: number; per_page?: number },
+  ): Promise<TimesheetEntry[]> {
+    return this.client.request(
+      "GET",
+      this.path(`/projects/${projectId}/timesheet`),
+      { query },
+    );
+  }
+  projectCsv(projectId: string): Promise<string> {
+    return this.client.requestText(
+      "GET",
+      this.path(`/projects/${projectId}/timesheet/csv`),
+      { accept: "text/csv" },
+    );
+  }
+  /**
+   * One page of an item's timesheet (a repeating event's is one day's:
+   * pass `occurrence`). The project's timesheet id lists time on the
+   * project itself.
+   */
+  recording(
+    recordingId: string,
+    query?: { occurrence?: string; page?: number; per_page?: number },
+  ): Promise<TimesheetEntry[]> {
+    return this.client.request(
+      "GET",
+      this.path(`/recordings/${recordingId}/timesheet`),
+      { query },
+    );
+  }
+  recordingCsv(
+    recordingId: string,
+    query?: { occurrence?: string },
+  ): Promise<string> {
+    return this.client.requestText(
+      "GET",
+      this.path(`/recordings/${recordingId}/timesheet/csv`),
+      { query, accept: "text/csv" },
+    );
+  }
+
+  /** Logs time on the project itself. */
+  logOnProject(
+    projectId: string,
+    body: TimesheetEntryInput,
+  ): Promise<TimesheetEntry> {
+    return this.client.request(
+      "POST",
+      this.path(`/projects/${projectId}/timesheet/entries`),
+      { body },
+    );
+  }
+  /**
+   * Logs time on an item (a to-do, message, document, file, card or
+   * event; `occurrence` names a repeating event's day), or on the project
+   * when the id is its timesheet's.
+   */
+  logOnRecording(
+    recordingId: string,
+    body: TimesheetEntryInput & { occurrence?: string },
+  ): Promise<TimesheetEntry> {
+    return this.client.request(
+      "POST",
+      this.path(`/recordings/${recordingId}/timesheet/entries`),
+      { body },
+    );
+  }
+  /** Logs absence (vacation, sick leave, …) against an absence type. */
+  logAbsence(
+    body: TimesheetEntryInput & { absence_type_id: string },
+  ): Promise<TimesheetEntry> {
+    return this.client.request(
+      "POST",
+      this.path("/my/timesheet/absences"),
+      { body },
+    );
+  }
+
+  getEntry(entryId: string): Promise<TimesheetEntry> {
+    return this.client.request(
+      "GET",
+      this.path(`/timesheet-entries/${entryId}`),
+    );
+  }
+  /** Changes the day, hours, notes or person; what the time is on never changes. */
+  updateEntry(
+    entryId: string,
+    body: {
+      date?: string;
+      hours?: string | number;
+      description?: string | null;
+      person_id?: string;
+    },
+  ): Promise<TimesheetEntry> {
+    return this.client.request(
+      "PATCH",
+      this.path(`/timesheet-entries/${entryId}`),
+      { body },
+    );
+  }
+  /** Permanent: an entry has no trash of its own. */
+  deleteEntry(entryId: string): Promise<{ ok: true }> {
+    return this.client.request(
+      "DELETE",
+      this.path(`/timesheet-entries/${entryId}`),
+    );
+  }
+
+  /** One person's week (default the caller's, this week). */
+  week(query?: { week?: string; person_id?: string }): Promise<TimesheetWeek> {
+    return this.client.request("GET", this.path("/my/timesheet"), { query });
+  }
+  /** Adds a row to a week that may not have hours yet. */
+  addRow(body: {
+    project_id: string;
+    recording_id?: string;
+    occurrence?: string;
+    week?: string;
+    person_id?: string;
+  }): Promise<TimesheetWeekRow> {
+    return this.client.request("POST", this.path("/my/timesheet/rows"), {
+      body,
+    });
+  }
+  /**
+   * Removes a row. A row with hours that week needs `delete_entries: true`,
+   * which deletes them for good.
+   */
+  removeRow(query: {
+    recording_id: string;
+    occurrence?: string;
+    week?: string;
+    person_id?: string;
+    delete_entries?: boolean;
+  }): Promise<{ ok: true; deleted_entries: number }> {
+    return this.client.request("DELETE", this.path("/my/timesheet/rows"), {
+      query,
+    });
+  }
+  /** What a new row in a project can be on, for a week (`q` searches). */
+  items(
+    projectId: string,
+    query?: { week?: string; q?: string },
+  ): Promise<TimesheetPickerItem[]> {
+    return this.client.request(
+      "GET",
+      this.path(`/projects/${projectId}/timesheet/items`),
+      { query },
+    );
+  }
+
+  /** Submits or resubmits a week for approval (while approvals are on). */
+  submitWeek(
+    weekStart: string,
+    body?: { person_id?: string },
+  ): Promise<TimesheetWeekApproval> {
+    return this.client.request(
+      "POST",
+      this.path(`/my/timesheet/weeks/${weekStart}/submit`),
+      body ? { body } : undefined,
+    );
+  }
+  /** The approvals page for a week: owners and admins. */
+  approvals(query?: { week?: string }): Promise<TimesheetApprovals> {
+    return this.client.request("GET", this.path("/timesheet/approvals"), {
+      query,
+    });
+  }
+  approve(
+    membershipId: string,
+    weekStart: string,
+  ): Promise<TimesheetWeekApproval> {
+    return this.client.request(
+      "POST",
+      this.path(`/timesheet/approvals/${membershipId}/${weekStart}/approve`),
+    );
+  }
+  /** Rejects a week; the reason is required and reaches the person. */
+  reject(
+    membershipId: string,
+    weekStart: string,
+    reason: string,
+  ): Promise<TimesheetWeekApproval> {
+    return this.client.request(
+      "POST",
+      this.path(`/timesheet/approvals/${membershipId}/${weekStart}/reject`),
+      { body: { reason } },
+    );
+  }
+
+  absenceTypes(query?: {
+    include_archived?: boolean;
+  }): Promise<TimesheetAbsenceType[]> {
+    return this.client.request(
+      "GET",
+      this.path("/timesheet/absence-types"),
+      { query },
+    );
+  }
+  /** Owners and admins. */
+  createAbsenceType(body: { name: string }): Promise<TimesheetAbsenceType> {
+    return this.client.request(
+      "POST",
+      this.path("/timesheet/absence-types"),
+      { body },
+    );
+  }
+  /** Owners and admins. `archived: true` removes a type; its hours keep the label. */
+  updateAbsenceType(
+    absenceTypeId: string,
+    body: { name?: string; position?: number; archived?: boolean },
+  ): Promise<TimesheetAbsenceType> {
+    return this.client.request(
+      "PATCH",
+      this.path(`/timesheet/absence-types/${absenceTypeId}`),
+      { body },
+    );
   }
 }

@@ -1,9 +1,9 @@
 # thicket-sdk
 
 The official TypeScript client for the [Thicket](https://www.thickethq.com)
-API. Projects, to-dos, messages, docs, boards, calendar, chat, people, and
-search: everything the product does is on the API, and the web app runs on
-the same routes.
+API. Projects, to-dos, messages, docs, boards, calendar, chat, people,
+timesheets and search: everything the product does is on the API, and the
+web app runs on the same routes.
 
 - **Reference**: [thickethq.com/developers/api](https://www.thickethq.com/developers/api)
 - **OpenAPI spec**: [`openapi.json`](./openapi.json) at this repo's root
@@ -58,6 +58,35 @@ permissions. Read-only tokens exist; writes with one fail with
   listings to the end.
 - **Types**: generated from `openapi.json` (`npm run generate`), so the
   types can't drift from the published contract.
+
+## Timesheets
+
+`org.timesheets` covers logged time: the report and its CSV, project and
+item timesheets, logging and editing entries, the weekly timesheet,
+absence, and approvals.
+
+```ts
+// Log 1 hour 30 minutes on a to-do
+const entry = await org.timesheets.logOnRecording(todoId, {
+  date: "2026-09-25",
+  hours: "1:30",
+  description: "Reviewed the launch checklist",
+});
+console.log(entry.hours); // "1.5"
+
+// Last month's report, then the same rows as CSV
+const entries = await org.timesheets.report({ project_id: projectId });
+const csv = await org.timesheets.reportCsv({ project_id: projectId });
+
+// This week, and submitting it while approvals are on
+const week = await org.timesheets.week();
+await org.timesheets.submitWeek(week.week_start);
+```
+
+Hours go in as `"1.5"` or `"1:30"` and come back as decimal strings. A
+person can log at most 24 hours a day (`apiCode: "daily_cap"`), and
+`deleteEntry` is permanent. Timesheets are for the team: a client's token
+gets `not_found` from every call.
 
 ## Beyond the wrappers
 

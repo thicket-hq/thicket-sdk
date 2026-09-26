@@ -384,7 +384,7 @@ export interface paths {
         head?: never;
         /**
          * Edit an event
-         * @description Edits apply to the whole series for recurring events; invitees are notified of the change. Same fields as create, all optional. `recurrence: null` stops the event recurring; to drop a single occurrence use the occurrences DELETE endpoint instead.
+         * @description Edits apply to the whole series for recurring events; to change one day, or one day onward, use the occurrences PATCH endpoint, and to delete them the occurrences DELETE. Invitees are notified of the change. Same fields as create, all optional. `recurrence: null` stops the event recurring. A series keeps its own `exdates` whatever the request sends: each names a day that lives on as its own event or in the trash.
          */
         patch: operations["updateCalendarEvent"];
         trace?: never;
@@ -421,12 +421,16 @@ export interface paths {
         post?: never;
         /**
          * Delete an occurrence of a recurring event
-         * @description For recurring events only. Default: drop just this occurrence (an exdate, `result: excluded`). `?mode=future`: end the series the day before (`result: truncated`); from the first occurrence that trashes the whole series (`result: trashed`). `date` is the occurrence's `occurrence_key`, the anchor-zone day key from the calendar listing; never derive it from `start` client-side.
+         * @description The trash prompt for recurring events ("Only delete this event" / "Also delete all future events"); recurring events only. What's deleted goes to the trash (`trashed_id`), and restoring it (`PUT /recordings/{trashed_id}/status/active`) puts the dates back into the series. Default: just this occurrence (`result: excluded`; the day is trashed as its own event). `?mode=future`: this and every later occurrence (`result: truncated`; the series ends the day before and the rest is trashed as one repeating event); from the first occurrence that trashes the whole series (`result: trashed`, `trashed_id` is the event itself). `date` is the occurrence's `occurrence_key`, the anchor-zone day key from the calendar listing; never derive it from `start` client-side. 404 when the series has no occurrence that day.
          */
         delete: operations["deleteEventOccurrence"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit an occurrence of a recurring event
+         * @description The edit prompt for recurring events. Default ("No, just change this event"): the day splits off as its own event, linked to the series by `series_id` and `occurrence_key`, and takes the edit. `?mode=future` ("Yes, change future occurrences too"): the series ends the day before and a copy repeating from this day takes the edit; from the first occurrence the whole series is edited in place. Invitees hear about the change as with any edit, and a new date or time logs `rescheduled`. Returns the event that now carries the change, or the series unchanged when nothing changed. Same fields as editing an event, all optional. 404 when the series has no occurrence that day.
+         */
+        patch: operations["updateEventOccurrence"];
         trace?: never;
     };
     "/api/v1/{orgSlug}/calendar/feeds": {
@@ -788,7 +792,7 @@ export interface paths {
         };
         /**
          * Your open assignments
-         * @description Open work assigned to you across projects, grouped into `priorities` (your Up Next list, in your order; items carry `priority_id`) and `non_priorities`. Card steps are normalized under their parent card as `children`: the card is pulled in even when only a step is assigned, and a prioritized step surfaces its card. Top-level items carry `assigned_to_me`, false only for a pulled-in parent card, which is not your assignment and cannot go Up Next.
+         * @description Open to-dos, cards and card steps assigned to you across projects, grouped into `priorities` (your Up Next list, in your order; items carry `priority_id`) and `non_priorities`. Card steps are normalized under their parent card as `children`: the card is pulled in even when only a step is assigned, and a prioritized step surfaces its card. Top-level items carry `assigned_to_me`, false only for a pulled-in parent card, which is not your assignment and cannot go Up Next. Schedule events you are invited to are not assignments: they live on /my/events and /my/do-today.
          */
         get: operations["getMyAssignments"];
         put?: never;
@@ -808,7 +812,7 @@ export interface paths {
         };
         /**
          * Your completed assignments
-         * @description Newest first; assignments on archived or trashed recordings are excluded.
+         * @description Completed to-dos, cards and card steps, newest first; assignments on archived or trashed recordings are excluded.
          */
         get: operations["listCompletedAssignments"];
         put?: never;
@@ -828,7 +832,7 @@ export interface paths {
         };
         /**
          * Your dated assignments by due window
-         * @description Dated open assignments in one due window. `overdue` is the default; `due_later_this_week` runs through this Sunday and `due_next_week` covers next Monday to Sunday, computed in your time zone.
+         * @description Dated open to-dos, cards and card steps in one due window. `overdue` is the default; `due_later_this_week` runs through this Sunday and `due_next_week` covers next Monday to Sunday, computed in your time zone.
          */
         get: operations["listDueAssignments"];
         put?: never;
@@ -854,7 +858,7 @@ export interface paths {
         put?: never;
         /**
          * Add an assignment to Up Next
-         * @description Adds one of your own open assignments to the bottom of Up Next (idempotent). Anything that is not your assignment is a 404.
+         * @description Adds one of your own open assignments (a to-do, card or card step) to the bottom of Up Next (idempotent). Anything else, a schedule event included, is a 404.
          */
         post: operations["addUpNext"];
         delete?: never;
@@ -896,7 +900,7 @@ export interface paths {
         };
         /**
          * Your bookmarks
-         * @description Personal saved links to recordings, newest first.
+         * @description Personal saved links to recordings, newest first. Only bookmarks the caller can still open are listed: one in a project they left, or on an item no longer shared with them, reappears if access returns.
          */
         get: operations["listBookmarks"];
         put?: never;
@@ -1031,6 +1035,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/my/getting-started": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Getting-started guide catalog and notification preference
+         * @description Evergreen guides this role may open (none for clients; the invitation guide for owners and admins). Fetch message content using the existing bulletin detail endpoint. Reading there acknowledges the guide; the catalog does not mark anything read.
+         */
+        get: operations["getMyGettingStarted"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Stop getting-started notifications
+         * @description Stops the sequence for this person across workspaces and marks its current-workspace messages read. Work notifications and email preferences are unchanged. The guides remain readable. Idempotent, and accepted in any state.
+         */
+        patch: operations["stopMyGettingStarted"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your notes
+         * @description My Notes: one private rich-text scratchpad per person, created empty the first time it is read. Only its creator can ever read it.
+         */
+        get: operations["getMyNote"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Save your notes
+         * @description The autosave. Saving what is already stored is a no-op that leaves `updated_at` alone. Pass `base_updated_at` to refuse a stale write: a 409 carries the current pad under `error.note` and writes nothing.
+         */
+        patch: operations["saveMyNote"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/note/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore your previous notes
+         * @description Swaps the pad with its restore point (`previous_version`), so restoring again undoes the restore. 404 when there is no earlier version yet.
+         */
+        post: operations["restoreMyNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/my/notes": {
         parameters: {
             query?: never;
@@ -1039,14 +1111,16 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Your private notes
-         * @description My Notes: private rich-text notes with no project, visible only to their creator. Rows are `personal_note` recordings.
+         * Your notes as a one-item list (deprecated)
+         * @deprecated
+         * @description Legacy note list, kept only for the 1.5.1 App Store app and removed with the native app's My Notes screen (parity-followups-sweep row 48). Use `/my/note`. Returns `[pad]`: the one scratchpad, created empty if needed.
          */
         get: operations["listMyNotes"];
         put?: never;
         /**
-         * Create a private note
-         * @description `content_html` (rich, sanitized) wins over `content` (plain text, converted to HTML).
+         * Append to your notes (deprecated)
+         * @deprecated
+         * @description Legacy note list, kept only for the 1.5.1 App Store app and removed with the native app's My Notes screen (parity-followups-sweep row 48). Use `/my/note`. There is no second note to create: the jot is appended to the end of the pad, `title` as a heading over it, and the pad comes back as 201.
          */
         post: operations["createMyNote"];
         delete?: never;
@@ -1066,15 +1140,17 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Delete a note
-         * @description Permanent: notes skip the trash. Creator-only.
+         * Clear your notes (deprecated)
+         * @deprecated
+         * @description Legacy note list, kept only for the 1.5.1 App Store app and removed with the native app's My Notes screen (parity-followups-sweep row 48). Use `/my/note`. Clears the pad (its content becomes null; the restore point keeps what it held). The row itself stays: the pad is one row per person for good.
          */
         delete: operations["deleteMyNote"];
         options?: never;
         head?: never;
         /**
-         * Edit a note
-         * @description Send only the fields to change; `content_html` wins over `content`. Creator-only: anyone else's note is a 404.
+         * Save your notes by id (deprecated)
+         * @deprecated
+         * @description Legacy note list, kept only for the 1.5.1 App Store app and removed with the native app's My Notes screen (parity-followups-sweep row 48). Use `/my/note`. Only the pad's own id resolves; anything else is a 404. The pad has no title, so `title` is accepted and dropped; `content_html` wins over `content` and replaces the whole pad, with no stale check.
          */
         patch: operations["updateMyNote"];
         trace?: never;
@@ -1187,6 +1263,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/my/timesheet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a week of the weekly timesheet
+         * @description One person's week, Mon to Sun or from whatever day the org's week starts: its rows (the ones added that week, plus one for every item, event day or project the week's hours are on), the Absence rows (every active absence type, and a removed one while it has hours that week), the week's counted entries and what the caller may change. Each week starts fresh: nothing carries over. Time in projects the caller can't see stays out. Members read their own week; owners and admins anyone's on the team (`person_id`).
+         */
+        get: operations["getMyTimesheet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/timesheet/absences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log absence
+         * @description Time off (vacation, sick leave, …) belongs to the org, not a project: the entry has no project and no parent. Only the person, owners and admins see it; it never shows on a project timesheet.
+         */
+        post: operations["createTimesheetAbsence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/timesheet/rows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a row to a week
+         * @description A row the week keeps without hours: a project, with an item in it or not. The same guards as logging time there (Timesheet on, the item active, the person on the project). A row the week already has comes back as it is.
+         */
+        post: operations["addMyTimesheetRow"];
+        /**
+         * Remove a row from a week
+         * @description Removes the row and, with `delete_entries=true`, its entries that week, permanently. Entries on other days of the event or in other weeks stay.
+         */
+        delete: operations["removeMyTimesheetRow"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/timesheet/weeks/{weekStart}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a week for approval
+         * @description While approvals are on: records the week that starts on `weekStart` with its hours as they are now. A changed or rejected week is resubmitted the same way; one already submitted and unchanged comes back as it is. Nothing locks: the week stays editable, and a later change reads `changed`. Notifies no one; the week appears on the approvals page. Members submit their own week, owners and admins anyone's on the team (`person_id`).
+         */
+        post: operations["submitMyTimesheetWeek"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/my/ui-state": {
         parameters: {
             query?: never;
@@ -1196,12 +1356,12 @@ export interface paths {
         };
         /**
          * Your cross-device UI memory
-         * @description A free-form JSON object of personal UI state, e.g. `{collapsedColumns: {<projectId>: [columnIds]}}` for the saved-just-for-you card-table column collapse, keyed by project id.
+         * @description A free-form JSON object of personal UI state, e.g. `{collapsedColumns: {<projectId>: [columnIds]}}` for the saved-just-for-you card-table column collapse, keyed by project id, and `{docsView: {<folderId>: "grid"|"list"}}` for the Docs & Files grid/list choice, remembered per folder (the tool's root container carries the top level's choice, which the project page's Docs & Files card follows; a folder with no entry opens the way its nearest ancestor with one does, else `list`).
          */
         get: operations["getUiState"];
         /**
          * Merge into your UI memory
-         * @description A shallow top-level merge: each key you send replaces that key wholesale, so send `collapsedColumns` complete. Returns the merged state.
+         * @description A shallow top-level merge: each key you send replaces that key wholesale, so send `collapsedColumns` and `docsView` complete. Returns the merged state.
          */
         put: operations["updateUiState"];
         post?: never;
@@ -1220,13 +1380,13 @@ export interface paths {
         };
         /**
          * List the organization's people
-         * @description Active members with role, title, company, and out-of-office dates. Soft-removed people are excluded.
+         * @description Active members with role, title, company, out-of-office dates, and whether their email address is bouncing. Soft-removed people are excluded.
          */
         get: operations["listPeople"];
         put?: never;
         /**
          * Invite someone
-         * @description Admins and up; owner invites require an owner. `note` rides the invitation email as plain text; `project_ids` are granted on accept. The email carries a decline link that stamps the invite declined and notifies the inviter. Plan seat limits apply.
+         * @description Admins and up; owner invites require an owner. `note` rides the invitation email as plain text; `project_ids` are granted on accept. The email carries a decline link that stamps the invite declined and notifies the inviter. Plan seat limits apply. One invitation per address per workspace: inviting an address that already has a pending invitation folds into it. New `project_ids` pool onto that invitation and go out as the 'added you to' follow-up on its original join link (201); with nothing new to grant the call answers 403 (already_invited) and sends nothing, resend is the nudge. A declined or expired invitation is revived and re-sent on the same link, under the reminder cooldown (403 invitation_send_cooldown inside an hour of the last invitation email to that address). The invitation and email job are committed together; email delivery runs after commit and retries transient failures. Success confirms queuing, not provider delivery. A global email pause returns 503 (email_paused) before changing the invitation.
          */
         post: operations["invitePerson"];
         delete?: never;
@@ -1407,7 +1567,7 @@ export interface paths {
         put?: never;
         /**
          * Resend an invitation
-         * @description Nudge a pending invitee: fresh email, same still-valid token (admin and up). Also revives a declined invitation so it can be accepted again.
+         * @description Nudge a pending invitee: fresh email, same still-valid token (admin and up). Also revives a declined invitation so it can be accepted again (seat limits apply to the revive). Reminders rest an hour: inside an hour of the last invitation email to that address the call answers 403 (invitation_send_cooldown) and sends nothing; the join link on the invitation stays the fallback. The invitation and email job are committed together; email delivery runs after commit and retries transient failures. Success confirms queuing, not provider delivery. A global email pause returns 503 (email_paused) before changing the invitation.
          */
         post: operations["resendInvitation"];
         delete?: never;
@@ -1477,7 +1637,7 @@ export interface paths {
         };
         /**
          * Get a project
-         * @description The project plus its `tools`, each with its `container_id` (content is created under that container recording). `dock` is a deprecated alias of `tools` during the vocabulary transition.
+         * @description The project plus its `tools`, each with its `container_id` (content is created under that container recording). `dock` is a deprecated alias of `tools` during the vocabulary transition. `timesheet_enabled` is the project's Timesheet switch; clients never receive it.
          */
         get: operations["getProject"];
         put?: never;
@@ -1487,9 +1647,29 @@ export interface paths {
         head?: never;
         /**
          * Update a project
-         * @description `color` is a preset card color; anything outside the enum is a 400. `starts_on` and `ends_on` travel together: set both or null both, and `ends_on` must not precede `starts_on` (violations are a 400). `show_activity` toggles the project's activity rollups. `clients_enabled: false` reverts every recording in the project to team-only and drops client access (Work with clients); `client_company_name` is the label shown on the project. Move the project in or out of a home-screen folder with `folder_id` (or null).
+         * @description `color` is a preset card color; anything outside the enum is a 400. `starts_on` and `ends_on` travel together: set both or null both, and `ends_on` must not precede `starts_on` (violations are a 400). `show_activity` toggles the project's activity rollups. `clients_enabled: false` reverts every recording in the project to team-only and drops client access (Work with clients); `client_company_name` is the label shown on the project. Move the project in or out of a home-screen folder with `folder_id` (or null). `timesheet_enabled` switches the project's Timesheet (a project-details edit: never clients, and "Restrict who can edit project details" applies); the response then carries it.
          */
         patch: operations["updateProject"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/audience": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who an item in the project reaches
+         * @description The people and groups an item in this project reaches: everyone on the project's roster, every teammate when the project is open to everyone in the account, and clients only when the item is visible to clients. Removed people never appear, and a client caller sees only the people clients can see. This is the list the @-mention, assignee, subscriber and invitee pickers offer. `PUT /recordings/{id}/assignees` refuses (403) and `PUT /recordings/{id}/subscribers` skips anyone outside it, and a mention of anyone outside it is never delivered, so build pickers on this rather than on `GET /projects/{projectId}/people`. Pass the item's `visible_to_clients`, or for a new item the visibility it will have.
+         */
+        get: operations["getProjectAudience"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/{orgSlug}/projects/{projectId}/events": {
@@ -1758,6 +1938,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/projects/{projectId}/timesheet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A project's timesheet
+         * @description Every counted entry in the project, on the project itself and on its items, newest day first then newest logged. Absence is never here. 404 while the project's Timesheet is off, and for clients.
+         */
+        get: operations["listProjectTimesheet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/timesheet/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A project's timesheet as CSV
+         * @description The project's timesheet as a CSV file: every counted entry, on the project itself and on its items, unpaginated. 404 while the project's Timesheet is off, and for clients.
+         */
+        get: operations["downloadProjectTimesheetCsv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/timesheet/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log time on a project
+         * @description Time on the project itself, not on any one item: the entry's `parent` is the project's timesheet (`type: "timesheet"`), made with the first. The project must have its Timesheet on and be neither archived nor in the trash. Writes no activity and sends no notification.
+         */
+        post: operations["createProjectTimesheetEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/timesheet/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List what can take time in a week
+         * @description For adding a row to the weekly timesheet: the project's active to-dos, events, messages, documents, files and cards, in that order. Up to 25 of each type (the most recently changed), and every event in the week, one per day of a repeating one. `404` while the project's Timesheet is off.
+         */
+        get: operations["listProjectTimesheetItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/projects/{projectId}/tools": {
         parameters: {
             query?: never;
@@ -1949,7 +2209,7 @@ export interface paths {
         head?: never;
         /**
          * Edit a recording
-         * @description All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed.
+         * @description All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed. The Not Now and Done card-table columns keep their `title` and their description (`content`/`content_html`): editing either refuses (404).
          */
         patch: operations["updateRecording"];
         trace?: never;
@@ -2049,10 +2309,30 @@ export interface paths {
         get: operations["listAssignees"];
         /**
          * Replace the assignee set
-         * @description Assignment is always many-capable: PUT replaces the WHOLE set (always an array; [] clears). New assignees are notified and subscribed, and so is whoever assigned them: assigning follows the work.
+         * @description Assignment is always many-capable: PUT replaces the WHOLE set (always an array; [] clears). New assignees are notified and subscribed, and so is whoever assigned them: assigning follows the work. Everyone newly added must be able to open the recording (on the project's people, or a teammate on a project open to everyone; a client only on client-visible work; never a removed person), otherwise 403 and nothing changes.
          */
         put: operations["setAssignees"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a card with assignments and ordered steps atomically
+         * @description All content commits in one transaction. Invalid steps, assignments or parent access roll back the entire operation. Notifications are queued durably and delivered after commit. Returns a recording with created_step_count. Requires a column parent.
+         */
+        post: operations["createCardWithSteps"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2089,7 +2369,7 @@ export interface paths {
         };
         /**
          * List a container's children
-         * @description Default order is position/created; `sort`+`direction` choose another order, and `before`+`limit` page backwards by creation time (chat history uses this cursor). Rows carry `creator_name`, `creator_image`, `comment_count`, `last_comment_at` so list surfaces render bylines and comment badges without N+1 lookups; `chat_message` rows additionally carry their `cheers` and `client_approval` rows their `assignees`. `status=drafted` only ever returns the caller's own drafts.
+         * @description Default order is position/created; `sort`+`direction` choose another order, and `before`+`limit` page backwards by creation time (chat history uses this cursor). Rows carry `creator_name`, `creator_image`, `comment_count`, `last_comment_at` so list surfaces render bylines and comment badges without N+1 lookups; `chat_message` rows additionally carry their `cheers`, `client_approval` and `card` rows their `assignees` (with `image`), `card` rows `step_count`/`steps_done`, `column` rows `card_count`, `todolist` rows `todo_open_count`/`todo_done_count` (groups included), and `upload` rows `byte_size`/`content_type`: everything a list row shows, batched, never a fetch per row. `status=drafted` only ever returns the caller's own drafts.
          */
         get: operations["listChildren"];
         put?: never;
@@ -2394,7 +2674,7 @@ export interface paths {
         get: operations["getPublicLink"];
         /**
          * Publish a public link
-         * @description Shares one message, document, or file read-only at /public/{token}: a 256-bit token, revocable, noindex, sanitized content only, no comments, no subtree. Idempotent while a link is active. Clients can't publish, and when the org restricts public links only owners and admins can (403).
+         * @description Shares one message, document, or file read-only at /public/{token}: a 256-bit token, revocable, noindex, sanitized content only, no comments, no subtree. Idempotent while a link is active. Clients can't publish, and when the org restricts public links only owners and admins can (403). An item in an archived or trashed project can't be published (403), and an existing link shows nothing until the project is active again.
          */
         put: operations["publishPublicLink"];
         post?: never;
@@ -2443,7 +2723,7 @@ export interface paths {
         put?: never;
         /**
          * Create a check-in question
-         * @description Askees (`membership_ids`) are auto-subscribed to answers and notified per occurrence. Schedule semantics: daily takes `days` (0=Sunday to 6=Saturday, default Monday to Friday, weekends allowed); weekly and every_other_week take `day_of_week` (the alternation anchors at creation); monthly means the first `day_of_week` of the month, or a fixed `day_of_month`. Clients can't create check-ins (403). Question edits go through the generic PATCH /recordings/{id}: `title`, plus question-only `schedule` and `membership_ids`.
+         * @description Askees (`membership_ids`) are auto-subscribed to answers and notified per occurrence. Schedule semantics: daily takes `days` (0=Sunday to 6=Saturday, default Monday to Friday, weekends allowed); weekly and every_other_week take `day_of_week` (the alternation anchors at creation); monthly means the first `day_of_week` of the month, or a fixed `day_of_month`. Clients can't create check-ins (403). Every askee must be on the project (a teammate on a project open to everyone counts), and a client only when the question is visible to clients; anyone else is 403, on create and when `membership_ids` adds people. Question edits go through the generic PATCH /recordings/{id}: `title`, plus question-only `schedule` and `membership_ids`.
          */
         post: operations["createQuestion"];
         delete?: never;
@@ -2482,7 +2762,7 @@ export interface paths {
         get?: never;
         /**
          * Archive, trash, or restore
-         * @description Works on ANY type; trash is recoverable. Tool containers refuse (except a folder with a parent, which archives and trashes with its contents cascading); drafts must publish before archiving; restoring a trashed draft returns it to drafted, never published. The governance restrict-content-actions toggle can refuse non-authors (403).
+         * @description Works on ANY type; trash is recoverable. Tool containers refuse (except a folder with a parent, which archives and trashes with its contents cascading); drafts must publish before archiving, and `active` on a draft is 404 (publish it with POST /recordings/{recordingId}/publish); restoring a trashed draft returns it to drafted, never published. Clients may trash and restore only what they posted and never archive or unarchive (403). The governance restrict-content-actions toggle can refuse non-authors (403).
          */
         put: operations["setRecordingStatus"];
         post?: never;
@@ -2503,7 +2783,7 @@ export interface paths {
         get: operations["listSubscribers"];
         /**
          * Add or remove subscribers
-         * @description Deltas, not replacement: `add` and `remove` are membership id lists. `notify: "now"` pings added people immediately; `"next"` stays quiet until the next comment. Returns the updated subscriber set.
+         * @description Deltas, not replacement: `add` and `remove` are membership id lists. `notify: "now"` pings added people immediately; `"next"` stays quiet until the next comment. People in `add` who can't open the recording (off an invite-only project, a client on team-only work, removed) are skipped. Returns the updated subscriber set.
          */
         put: operations["updateSubscribers"];
         post?: never;
@@ -2530,6 +2810,66 @@ export interface paths {
         post?: never;
         /** Unsubscribe yourself */
         delete: operations["unsubscribeRecording"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/timesheet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An item's timesheet
+         * @description One item's counted entries, newest day first. Items that take time: `todo`, `message`, `document`, `upload`, `card` and `calendar_event`; anything else is a 404. The project's timesheet id (an entry's `parent.id` when `parent.type` is `timesheet`) lists the time on the project itself. A repeating event's timesheet is one day's: pass `occurrence`. An item in the trash lists nothing until it's restored. 404 while the project's Timesheet is off, for an event on the account calendar, and for clients.
+         */
+        get: operations["listRecordingTimesheet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/timesheet/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An item's timesheet as CSV
+         * @description One to-do's, message's, document's, file's, card's or event's timesheet as a CSV file, unpaginated: a repeating event's day with `occurrence`, or the project's own time when the id is its timesheet. Team only: clients receive 404.
+         */
+        get: operations["downloadRecordingTimesheetCsv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/timesheet/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log time on an item
+         * @description The item must be active and one that takes time (to-do, message, document, file, card or event) in a project with its Timesheet on; the project's timesheet id logs time on the project itself. Each day of a repeating event is its own timesheet: pass `occurrence`, and the entry's `parent` is the recording holding that day (the series, a part of it, or the day split off on its own) with `occurrence_date` set. Events on the account calendar take no time. Writes no activity and sends no notification.
+         */
+        post: operations["createRecordingTimesheetEntry"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2661,6 +3001,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/reports/timesheet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Timesheets report
+         * @description Every counted entry in a date range across the projects the caller can see: a flat list, newest day first, then newest logged. Not paginated; the range is the limit. An entry counts while its item exists: an item in the trash takes its hours out until it's restored, and an event parked on the account calendar takes them out until it moves back into a project. All projects means active and archived ones (templates and the sample project only when named in `project_id`), including projects whose Timesheet was since switched off, plus absence: everyone's for owners and admins, a member's own for them. `project_id` names one project and leaves absence out. While approvals are on, `status` reads one approval status (default `approved`: approved and unchanged since; `changed`: submitted or approved, then changed; rejected weeks stay out until resubmitted); it's ignored while they're off. Team only: clients receive 404.
+         */
+        get: operations["getTimesheetReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/reports/timesheet/csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Timesheets report as CSV
+         * @description The Timesheets report as a CSV file: the same parameters, defaults and entries as `getTimesheetReport`, one flat row per entry, newest day first, then newest logged. Absence rows carry Project "Absence" and the absence type's name as Item. Team only: clients receive 404.
+         */
+        get: operations["downloadTimesheetReportCsv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/reports/todos/assigned": {
         parameters: {
             query?: never;
@@ -2690,7 +3070,7 @@ export interface paths {
         };
         /**
          * One person's open assignments
-         * @description That person's open, pending assignments across the projects the caller can see. `group_by=bucket` (default) sorts by project, `group_by=date` by due date; the response echoes the grouping in `grouped_by`. Team only: clients receive 403.
+         * @description That person's open to-dos, cards and card steps across the projects the caller can see (schedule events they are invited to are not assignments). `group_by=bucket` (default) sorts by project, `group_by=date` by due date; the response echoes the grouping in `grouped_by`. Team only: clients receive 403.
          */
         get: operations["getPersonAssignments"];
         put?: never;
@@ -2825,7 +3205,7 @@ export interface paths {
         head?: never;
         /**
          * Update the org settings
-         * @description Tool names, history retention, voice notes, and the five governance flags: admin and up. `require_two_factor` is owner-only. Members receive 403. Governance flags bite at the guarded writes, not here: restricted project or people edits, moves, archives, and trashes answer 403 for non-creator members; public-link creation answers 403 for non-admins; comment and chat edits answer 403 for everyone (and deletes for non-admins) after 15 minutes.
+         * @description Tool names, history retention, voice notes, the timesheet week start, and the five governance flags: admin and up. `require_two_factor` is owner-only. Members receive 403. Governance flags bite at the guarded writes, not here: restricted project or people edits, moves, archives, and trashes answer 403 for non-creator members; public-link creation answers 403 for non-admins; comment and chat edits answer 403 for everyone (and deletes for non-admins) after 15 minutes.
          */
         patch: operations["updateOrgSettings"];
         trace?: never;
@@ -2916,6 +3296,138 @@ export interface paths {
          * @description Creates a real project from the template. It inherits the template's client setting; dates shift relative to today (anchored on the template's `starts_on`, else its save date); people assigned in the template join the new project. Instantiating enforces the plan's project limit (402) even though templates themselves never count against it. Archived templates cannot instantiate (404).
          */
         post: operations["useTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/timesheet-entries/{entryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a time entry
+         * @description An entry while it counts: its item in the trash, or its event on the account calendar, is a 404 until it's back. Time in a project reads for anyone on it, even after its Timesheet is switched off; absence reads only for its person, admins and owners. Clients receive 404.
+         */
+        get: operations["getTimesheetEntry"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a time entry
+         * @description Permanent: an entry has no trash of its own (it goes there only with its item, and comes back with it). Members delete their own time; admins and owners anyone's.
+         */
+        delete: operations["deleteTimesheetEntry"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a time entry
+         * @description Send only what changes: the day, hours, notes or person; what the time is on never changes. Members change their own time; admins and owners anyone's. A move to another day or person checks the 24-hour cap on the new one; editing only the notes never does.
+         */
+        patch: operations["updateTimesheetEntry"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/timesheet/absence-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List absence types
+         * @description The org's kinds of time off, in order. Every org starts with Vacation, Sick leave, Bereavement and Statutory holiday.
+         */
+        get: operations["listTimesheetAbsenceTypes"];
+        put?: never;
+        /**
+         * Add an absence type
+         * @description Owners and admins. It goes at the end of the list.
+         */
+        post: operations["createTimesheetAbsenceType"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/timesheet/absence-types/{absenceTypeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename, reorder, remove or restore an absence type
+         * @description Owners and admins. Removing (`archived: true`) keeps the hours already logged under its name; it takes no new time and leaves the weekly timesheet's Absence rows. Restoring (`archived: false`) puts it back at the end of the list.
+         */
+        patch: operations["updateTimesheetAbsenceType"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/timesheet/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The approvals page for one week
+         * @description Owners and admins, while approvals are on: for the week holding `week`, a row per person with time or a submission (their hours in projects the caller can see, the status as read now, who submitted and decided it), the team's people with neither, and every submitted or changed week from any other period still waiting on a decision, oldest first.
+         */
+        get: operations["getTimesheetApprovals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/timesheet/approvals/{membershipId}/{weekStart}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a submitted week
+         * @description Owners and admins, while approvals are on. Approves the week as its hours are now: a changed week's current hours become the approved ones. Approving your own week marks it `self_approved`. Approving an approved week changes nothing. Quiet: notifies no one.
+         */
+        post: operations["approveTimesheetWeek"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/timesheet/approvals/{membershipId}/{weekStart}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a week, with a reason
+         * @description Owners and admins, while approvals are on. Sends a submitted, changed or approved week back: it stays out of the report until it's resubmitted, and its person is notified with the reason, in the tray (action `timesheet_rejected`) and by email.
+         */
+        post: operations["rejectTimesheetWeek"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3200,7 +3712,7 @@ export interface paths {
         get?: never;
         /**
          * Register this device for mobile push
-         * @description Upserts the device's Expo push token; the mobile app calls it on start and after login, refreshing `last_seen_at`. User-scoped like preferences: notifications follow the person across orgs. Registering a token claims it from any previous signer, so on a shared device the previous user's notifications stop arriving. Anything that is not a valid Expo push token is a 422. Dead tokens are pruned automatically when Expo reports DeviceNotRegistered.
+         * @description Upserts the device's push token; the app calls it on start and after login, refreshing `last_seen_at`. User-scoped like preferences: notifications follow the person across orgs. Registering a token claims it from any previous signer, so on a shared device the previous user's notifications stop arriving. A native registration (`kind: apns`) supersedes the same person's Expo devices on that platform, so a phone that updated from the 1.x app never receives the same push twice. `expo_push_token` is the deprecated 1.x field, equivalent to `{token, kind: "expo"}`. A token that does not match its kind (an Expo token must be `ExponentPushToken[…]`, an APNs token hex, on an iOS device) is a 422. Dead tokens are pruned automatically when the transport reports them (Expo DeviceNotRegistered, APNs 410 Unregistered or BadDeviceToken).
          */
         put: operations["registerPushDevice"];
         post?: never;
@@ -3222,9 +3734,29 @@ export interface paths {
         post?: never;
         /**
          * Unregister a push device
-         * @description Sign-out unregisters the device. Idempotent: an unknown or already-removed token is still a 204.
+         * @description Sign-out unregisters the device, whatever the token's kind. Idempotent: an unknown or already-removed token is still a 204.
          */
         delete: operations["unregisterPushDevice"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/push-devices/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test push to my devices
+         * @description Sends one push notification ("Push notifications are working on this phone.") to every device the caller has registered, through each device's own transport (Expo or APNs): the self-serve end-to-end check behind the app's Notifications settings. `sent: 0` means nothing is registered for this person yet. Dead tokens are pruned and Expo delivery receipts tracked exactly as for a normal fan-out.
+         */
+        post: operations["sendTestPush"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3377,7 +3909,7 @@ export interface components {
         RecordingType: "message_board" | "message" | "comment" | "todos" | "todolist" | "todo" | "progress_update" | "folder" | "document" | "upload" | "linked_file" | "calendar" | "calendar_event" | "board" | "column" | "card" | "step" | "chat" | "chat_message" | "check_ins" | "question" | "answer" | "dm" | "clients" | "client_approval" | "client_correspondence" | "personal_note" | "health" | "health_update";
         /** @enum {string} */
         RecordingStatus: "active" | "archived" | "trashed" | "drafted";
-        /** @description The uniform shape every recording serializes to; type-specific data rides in `meta`. List rows on children endpoints additionally carry creator_name, creator_image, comment_count, last_comment_at (and chat_message rows their cheers, client_approval rows their assignees). */
+        /** @description The uniform shape every recording serializes to; type-specific data rides in `meta`. List rows on children endpoints additionally carry creator_name, creator_image, comment_count, last_comment_at, plus per-type riders: chat_message rows their cheers; client_approval and card rows their assignees; card rows step_count/steps_done; column rows card_count; todolist rows todo_open_count/todo_done_count; upload rows byte_size/content_type. */
         Recording: {
             /** Format: uuid */
             id: string;
@@ -3400,6 +3932,16 @@ export interface components {
             /** Format: date-time */
             ends_at?: string | null;
             all_day?: boolean | null;
+            /**
+             * Format: uuid
+             * @description Calendar events split off a repeating event (a day changed on its own, a deleted day in the trash, a "this and all future" part): the repeating event. Null otherwise.
+             */
+            series_id?: string | null;
+            /**
+             * Format: date
+             * @description With `series_id`: the anchor-zone day key of the occurrence this event replaces (a "this and all future" part's first day).
+             */
+            occurrence_key?: string | null;
             completed?: boolean;
             /** Format: date-time */
             completed_at?: string | null;
@@ -3459,6 +4001,8 @@ export interface components {
             /** Format: date */
             ends_on?: string | null;
             show_activity?: boolean;
+            /** @description GET and PATCH /projects/{projectId} only, and never for clients: the project's Timesheet switch (off by default) */
+            timesheet_enabled?: boolean;
             is_template?: boolean;
             is_sample?: boolean;
             /** @description Default listing only */
@@ -3487,6 +4031,8 @@ export interface components {
              * @description The tool's container recording; content is created under it
              */
             container_id?: string | null;
+            /** @description The container's own client flag. Chat and Boards share as a whole (PUT /recordings/{container_id}/visibility cascades to every line, column and card); clients never receive an unshared Chat in their tool list and cannot open it */
+            visible_to_clients?: boolean;
         };
         ProjectDetail: components["schemas"]["Project"] & {
             tools: components["schemas"]["ToolEntry"][];
@@ -3585,7 +4131,7 @@ export interface components {
              * @enum {string}
              */
             monthly_mode?: "day_of_month" | "nth_weekday";
-            /** @description Anchor-zone day keys of occurrences deleted via the trash prompt */
+            /** @description Anchor-zone day keys of occurrences that left the series: deleted (their events wait in the trash) or changed on their own. Accepted on create; on update the server keeps its own list */
             exdates?: string[];
             /**
              * Format: date
@@ -3594,7 +4140,7 @@ export interface components {
             until?: string;
             /** @description IANA zone anchoring the series' wall clock; default: the caller's zone */
             time_zone?: string;
-        };
+        } | null;
         /** @description One row of the global calendar: an event, one occurrence of a recurring event, or (with ?tasks=true) a due to-do or card. */
         CalendarOccurrence: {
             /**
@@ -3642,6 +4188,10 @@ export interface components {
             scope: {
                 /** Format: uuid */
                 projectId?: string;
+                /** @description Selected project ids and/or "account" */
+                projectIds?: string[];
+                /** @description The feed follows the member's starred projects */
+                starredOnly?: boolean;
                 includeTasks?: boolean;
                 /** @enum {string} */
                 just?: "me" | "everyone";
@@ -3712,7 +4262,7 @@ export interface components {
         ActivityEvent: {
             /** Format: uuid */
             id: string;
-            /** @description What happened: created, completed, moved, and the rest of the event vocabulary */
+            /** @description What happened: created, completed, moved, and the rest of the event vocabulary. Calendar: `rescheduled` (a new date, time, all-day state, or repeat rule), `occurrence_removed` (one day of a repeating event, or every day from one on, went to the trash) and `occurrence_restored` (it came back) */
             action: string;
             /** @description Human-readable qualifier for the action */
             detail?: string | null;
@@ -3837,6 +4387,33 @@ export interface components {
             over_a_month_late: components["schemas"]["OverdueReportItem"][];
             over_three_months_late: components["schemas"]["OverdueReportItem"][];
         };
+        /**
+         * @description The push token's transport: `expo` (the Expo push service, the 1.x app) or `apns` (Apple's service directly, the native iOS app). `fcm` joins with the Android app.
+         * @enum {string}
+         */
+        PushTokenKind: "expo" | "apns";
+        /** @description Your private scratchpad: a `personal_note` recording with no project, no parent and no title, one per person, created empty on first read. `meta` is always null here; the restore point's body stays server-side. */
+        MyNote: components["schemas"]["Recording"] & {
+            /** @description The restore point: the pad as it stood when the current sitting began, moved forward by any save that discards most of the pad. Null until there is something to go back to. */
+            previous_version: {
+                /**
+                 * Format: date-time
+                 * @description When the restorable version was last saved
+                 */
+                saved_at: string;
+            } | null;
+        };
+        MyNoteSave: {
+            /** @description Plain text; converted to HTML */
+            content?: string | null;
+            /** @description Rich HTML, sanitized; wins over content. Null, or an empty editor, clears the pad. */
+            content_html?: string | null;
+            /**
+             * Format: date-time
+             * @description The `updated_at` this client last saw. When the pad has moved on since (another tab, the phone), the save answers 409 with the current pad under `error.note` instead of overwriting it.
+             */
+            base_updated_at?: string;
+        };
         AssignmentRow: components["schemas"]["Recording"] & {
             project_name?: string | null;
             parent_title?: string | null;
@@ -3943,6 +4520,16 @@ export interface components {
              * @description Platform announcements (action announced): open GET /api/v1/{orgSlug}/bulletins/{bulletin_id}
              */
             bulletin_id?: string | null;
+            /**
+             * Format: uuid
+             * @description A rejected timesheet week (action timesheet_rejected, the reason in body): the week the row is about, instead of a recording
+             */
+            timesheet_week_id?: string | null;
+            /**
+             * Format: date
+             * @description That week's first day: open GET /api/v1/{orgSlug}/my/timesheet?week={timesheet_week_start}
+             */
+            timesheet_week_start?: string | null;
             /** @description null for actor-less rows (announcements, reminders) */
             actor_name?: string | null;
             /** @description The notified-about recording's type */
@@ -4091,6 +4678,8 @@ export interface components {
                 /** Format: date */
                 end_date?: string;
             } | null;
+            /** @description True while the email provider has stopped mailing this address after a hard bounce or a spam complaint. Thicket's notifications to this person are not being delivered until they change their address in My settings. */
+            email_bouncing?: boolean;
             /** Format: date-time */
             created_at: string;
         };
@@ -4239,6 +4828,13 @@ export interface components {
             restrict_content_actions: boolean;
             restrict_public_links: boolean;
             limit_comment_editing: boolean;
+            /**
+             * @description The day the weekly timesheet starts (Admin › Timesheets; default monday). Absent for clients
+             * @enum {string}
+             */
+            timesheet_week_start?: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
+            /** @description Admin › Timesheets: people submit each week for approval, and a change made after that is flagged, never blocked (default false). Absent for clients */
+            timesheet_approvals_enabled?: boolean;
         };
         /** @description The account document: identity, owners, plan limits, can-do flags, and settings. */
         OrgAccount: {
@@ -4374,6 +4970,16 @@ export interface components {
             /** Format: date-time */
             trashed_at: string;
             trashed_by_name: string | null;
+            /**
+             * Format: date-time
+             * @description Calendar events: when the trashed event starts. A deleted day of a repeating event is dated by that day, a deleted "all future" part by its first day
+             */
+            starts_at?: string | null;
+            /** Format: date-time */
+            ends_at?: string | null;
+            all_day?: boolean | null;
+            /** @description A repeating event, or a deleted "all future" part of one */
+            recurring?: boolean;
         };
         ReassignImpact: {
             /** @description Open to-dos affected */
@@ -4422,6 +5028,26 @@ export interface components {
             created_at: string;
             /** @description Plain text pulled from the recording's content */
             excerpt?: string | null;
+        };
+        /** @description Who an item in a project reaches (`GET /projects/{projectId}/audience`). */
+        ProjectAudience: {
+            /** @description Everyone the item reaches, by name. */
+            people: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string;
+                /** @description Same-origin path or external URL; null means render an initials disc */
+                image: string | null;
+                /** @enum {string} */
+                role: "owner" | "admin" | "member" | "client";
+            }[];
+            /** @description The account's groups with at least one member the item reaches, each narrowed to those members. Picking a group assigns, invites or mentions exactly `member_ids`. Always empty for a client caller. */
+            groups: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                member_ids: string[];
+            }[];
         };
         /** @description One person with access to the project. */
         ProjectPerson: {
@@ -4479,6 +5105,16 @@ export interface components {
             /** Format: date-time */
             trashed_at: string;
             trashed_by_name?: string | null;
+            /**
+             * Format: date-time
+             * @description Calendar events: when the trashed event starts. A deleted day of a repeating event is dated by that day, a deleted "all future" part by its first day
+             */
+            starts_at?: string | null;
+            /** Format: date-time */
+            ends_at?: string | null;
+            all_day?: boolean | null;
+            /** @description A repeating event, or a deleted "all future" part of one */
+            recurring?: boolean;
         };
         /** @description An org-wide roadmap marker (bc3 lineup_markers conventions). */
         RoadmapMarker: {
@@ -4505,7 +5141,7 @@ export interface components {
              * @description Caps the last occurrence
              */
             until?: string;
-        };
+        } | null;
         /** @description Check-in questions only: when the question is asked. */
         QuestionSchedule: {
             /** @enum {string} */
@@ -4549,12 +5185,28 @@ export interface components {
             last_comment_at?: string | null;
             /** @description chat_message rows only */
             cheers?: components["schemas"]["InlineCheer"][];
-            /** @description client_approval rows only */
+            /** @description client_approval and card rows only */
             assignees?: {
                 /** Format: uuid */
                 membership_id: string;
-                name: string;
+                name: string | null;
+                /** @description Same-origin avatar path, or null */
+                image?: string | null;
             }[];
+            /** @description card rows only: active steps under the card */
+            step_count?: number;
+            /** @description card rows only: completed steps */
+            steps_done?: number;
+            /** @description column rows only: active cards in the column (held cards included) */
+            card_count?: number;
+            /** @description todolist rows only: open to-dos in the list, its groups included */
+            todo_open_count?: number;
+            /** @description todolist rows only: completed to-dos, groups included */
+            todo_done_count?: number;
+            /** @description upload rows only: the current version's size */
+            byte_size?: number | null;
+            /** @description upload rows only: the current version's MIME type */
+            content_type?: string | null;
         };
         CommentRow: components["schemas"]["Recording"] & {
             creator_name?: string | null;
@@ -4711,6 +5363,289 @@ export interface components {
             /** Format: uuid */
             membership_id: string;
             person: string | null;
+        };
+        /** @description Hours on a project, on one of its items, or as absence: a team-only recording. It counts while its item exists, goes to the trash and comes back with it, and moves with it. Clients never see one, and no generic `/recordings` route returns one. */
+        TimesheetEntry: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "timesheet_entry";
+            /** Format: date */
+            date: string;
+            /** @description Decimal hours as a string: "2.0", "1.5", "0.12" */
+            hours: string;
+            description: string | null;
+            person: components["schemas"]["ProjectMember"];
+            /** @description Who logged it */
+            creator: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string;
+                image?: string | null;
+            } | null;
+            /** @description Null for absence */
+            project: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            } | null;
+            parent: components["schemas"]["TimesheetEntryParent"];
+            /**
+             * Format: date
+             * @description The day of a repeating event; null otherwise
+             */
+            occurrence_date: string | null;
+            absence_type: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description What the time is on: the item, or the project's timesheet (`type: "timesheet"`) for time on the project itself; null for absence. */
+        TimesheetEntryParent: {
+            /**
+             * Format: uuid
+             * @description For a `timesheet` parent, the project's timesheet: `POST /recordings/{id}/timesheet/entries` there logs time on the project itself
+             */
+            id: string;
+            /** @enum {string} */
+            type: "timesheet" | "todo" | "message" | "document" | "upload" | "card" | "calendar_event";
+            /** @description "Timesheet" for time on the project itself */
+            title: string | null;
+            /**
+             * Format: uri
+             * @description The item's page (a repeating event's carries `?occurrence=`), or the project's timesheet page
+             */
+            app_url: string;
+        } | null;
+        /** @description A row of the weekly timesheet. An entry is in the row whose `recording_id` and `occurrence_date` are its `parent.id` and `occurrence_date`; new time in the row goes to `POST /recordings/{recording_id}/timesheet/entries` with `occurrence` set to `occurrence_date`. */
+        TimesheetWeekRow: {
+            /**
+             * Format: uuid
+             * @description What its time hangs under: the item, the recording holding a repeating event's day, or the project's timesheet (time on the project itself)
+             */
+            recording_id: string;
+            /**
+             * Format: date
+             * @description An event's day; null otherwise
+             */
+            occurrence_date: string | null;
+            project: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            };
+            /** @description Null for time on the project itself */
+            item: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                type: "todo" | "message" | "document" | "upload" | "card" | "calendar_event";
+                title: string | null;
+                /** Format: uri */
+                app_url: string;
+            } | null;
+            /** @description Added to the week (it stays without hours); false when only its hours put it there */
+            added: boolean;
+            /** @description New time can go in it */
+            can_log: boolean;
+            /** @description Its entries can change */
+            can_edit: boolean;
+            /** @description Why it takes no new time, when it doesn't */
+            closed_reason: string | null;
+        };
+        TimesheetWeek: {
+            person: components["schemas"]["ProjectMember"];
+            /** Format: date */
+            week_start: string;
+            /** Format: date */
+            week_end: string;
+            /**
+             * @description The org's timesheet week start (Admin › Timesheets)
+             * @enum {string}
+             */
+            week_starts_on: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
+            days: string[];
+            /** @description The caller can change this week: their own, or an owner's or admin's view of someone still on the team */
+            writable: boolean;
+            approvals_enabled: boolean;
+            /**
+             * @description The week's approval status; null while approvals are off
+             * @enum {string|null}
+             */
+            status: "not_submitted" | "submitted" | "approved" | "changed" | "rejected" | null;
+            /** @description Who submitted and decided the week, and when (the `TimesheetWeekApproval` shape); null while approvals are off */
+            approval: {
+                person: components["schemas"]["ProjectMember"];
+                /** Format: date */
+                week_start: string;
+                /** Format: date */
+                week_end: string;
+                /**
+                 * @description As read now: `changed` once the week's hours no longer match what was submitted or approved (an edit, a new or deleted entry, a trashed or restored item, a move; never a notes-only edit), until it's resubmitted or approved again. A rejected week stays `rejected` until it's resubmitted
+                 * @enum {string}
+                 */
+                status: "not_submitted" | "submitted" | "approved" | "changed" | "rejected";
+                /**
+                 * @description A changed week: whether it changed since it was submitted or since it was approved
+                 * @enum {string|null}
+                 */
+                changed_since: "submission" | "approval" | null;
+                /** Format: date-time */
+                submitted_at: string | null;
+                /** @description Who submitted it: the person, or an owner or admin for them */
+                submitted_by: {
+                    /** Format: uuid */
+                    membership_id: string;
+                    name: string;
+                    image?: string | null;
+                } | null;
+                /**
+                 * Format: date-time
+                 * @description When it was approved or rejected; null while it waits on a decision
+                 */
+                decided_at: string | null;
+                /** @description Who approved or rejected it */
+                decided_by: {
+                    /** Format: uuid */
+                    membership_id: string;
+                    name: string;
+                    image?: string | null;
+                } | null;
+                /** @description An owner or admin approved their own week */
+                self_approved: boolean;
+                rejection_reason: string | null;
+            } | null;
+            /** @description The week's total, decimal hours as a string */
+            total_hours: string;
+            /** @description By project name, then time on the project, then items */
+            rows: components["schemas"]["TimesheetWeekRow"][];
+            absence_types: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** @description Removed: here only while it has hours this week */
+                archived: boolean;
+                can_log: boolean;
+            }[];
+            /** @description What a new row can be in: active projects with their Timesheet on that the person is on. Empty when the week isn't writable */
+            projects: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+            }[];
+            /** @description The person's counted entries dated in the week, newest day first */
+            entries: components["schemas"]["TimesheetEntry"][];
+        };
+        TimesheetAbsenceType: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            position: number;
+            archived: boolean;
+            /** Format: date-time */
+            archived_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        TimesheetPickerItem: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "todo" | "message" | "document" | "upload" | "card" | "calendar_event";
+            title: string | null;
+            /**
+             * Format: date
+             * @description A repeating event's day: pass it as `occurrence` when adding the row
+             */
+            occurrence: string | null;
+            /**
+             * Format: date
+             * @description An event's day in the caller's zone; null for other items
+             */
+            day: string | null;
+            /** Format: uri */
+            app_url: string;
+        };
+        TimesheetWeekApproval: {
+            person: components["schemas"]["ProjectMember"];
+            /** Format: date */
+            week_start: string;
+            /** Format: date */
+            week_end: string;
+            /**
+             * @description As read now: `changed` once the week's hours no longer match what was submitted or approved (an edit, a new or deleted entry, a trashed or restored item, a move; never a notes-only edit), until it's resubmitted or approved again. A rejected week stays `rejected` until it's resubmitted
+             * @enum {string}
+             */
+            status: "not_submitted" | "submitted" | "approved" | "changed" | "rejected";
+            /**
+             * @description A changed week: whether it changed since it was submitted or since it was approved
+             * @enum {string|null}
+             */
+            changed_since: "submission" | "approval" | null;
+            /** Format: date-time */
+            submitted_at: string | null;
+            /** @description Who submitted it: the person, or an owner or admin for them */
+            submitted_by: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string;
+                image?: string | null;
+            } | null;
+            /**
+             * Format: date-time
+             * @description When it was approved or rejected; null while it waits on a decision
+             */
+            decided_at: string | null;
+            /** @description Who approved or rejected it */
+            decided_by: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string;
+                image?: string | null;
+            } | null;
+            /** @description An owner or admin approved their own week */
+            self_approved: boolean;
+            rejection_reason: string | null;
+        };
+        TimesheetApprovalRow: components["schemas"]["TimesheetWeekApproval"] & {
+            /** @description The week's counted hours in projects the caller can see (absence included), decimal hours as a string */
+            hours: string;
+            /** @description No longer on the team: their week still takes a decision */
+            removed: boolean;
+        };
+        TimesheetApprovals: {
+            /** Format: date */
+            week_start: string;
+            /** Format: date */
+            week_end: string;
+            /**
+             * @description The org's timesheet week start (Admin › Timesheets)
+             * @enum {string}
+             */
+            week_starts_on: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
+            /** @description A row per person with time or a submission this week, by name */
+            weeks: components["schemas"]["TimesheetApprovalRow"][];
+            /** @description The team's current people with neither, by name */
+            without_time: components["schemas"]["ProjectMember"][];
+            /** @description Submitted or changed weeks from any other period, oldest first */
+            waiting: components["schemas"]["TimesheetApprovalRow"][];
+            /** @description This week's rows by status */
+            counts: {
+                not_submitted: number;
+                submitted: number;
+                approved: number;
+                changed: number;
+                rejected: number;
+            };
+            /** @description Everyone with time this week is approved and unchanged */
+            all_approved: boolean;
         };
     };
     responses: {
@@ -5603,7 +6538,8 @@ export interface operations {
                     link?: string | null;
                     /** @default false */
                     circled?: boolean;
-                    recurrence?: components["schemas"]["CalendarRecurrence"] | null;
+                    /** @description The repeat schedule; null means the event does not recur (clears it on update) */
+                    recurrence?: components["schemas"]["CalendarRecurrence"];
                     /** @description Membership ids to invite; they are notified */
                     participant_ids?: string[];
                 };
@@ -5651,7 +6587,8 @@ export interface operations {
                     /** Format: uri */
                     link?: string | null;
                     circled?: boolean;
-                    recurrence?: components["schemas"]["CalendarRecurrence"] | null;
+                    /** @description The repeat schedule; null means the event does not recur (clears it on update) */
+                    recurrence?: components["schemas"]["CalendarRecurrence"];
                     /** @description Replaces the invitee set */
                     participant_ids?: string[];
                 };
@@ -5725,11 +6662,70 @@ export interface operations {
                     "application/json": {
                         /** @enum {string} */
                         result: "excluded" | "truncated" | "trashed";
+                        /**
+                         * Format: uuid
+                         * @description What went to the trash; restoring it undoes the deletion
+                         */
+                        trashed_id: string;
                     };
                 };
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    updateEventOccurrence: {
+        parameters: {
+            query?: {
+                /** @description `future`: this and every later occurrence */
+                mode?: "occurrence" | "future";
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                eventId: string;
+                /** @description The occurrence's anchor-zone day key (YYYY-MM-DD) */
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    title?: string;
+                    /** @description Plain-text notes, converted to HTML */
+                    content?: string | null;
+                    /** @description Rich notes (sanitized); wins over `content` when both are sent */
+                    content_html?: string | null;
+                    /** Format: date-time */
+                    starts_at?: string;
+                    /** Format: date-time */
+                    ends_at?: string | null;
+                    all_day?: boolean;
+                    /** Format: uri */
+                    link?: string | null;
+                    circled?: boolean;
+                    /** @description `?mode=future` only: how the event repeats from this day on (a single day repeats with its series). `exdates` is ignored */
+                    recurrence?: components["schemas"]["CalendarRecurrence"];
+                    /** @description Replaces the invitee set */
+                    participant_ids?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The event carrying the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recording"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
         };
     };
     listCalendarFeeds: {
@@ -5771,9 +6767,13 @@ export interface operations {
                 "application/json": {
                     /**
                      * Format: uuid
-                     * @description Limit the feed to one project
+                     * @description Legacy single-project scope; cannot be combined with project_ids
                      */
                     project_id?: string;
+                    /** @description Selected projects and/or the account calendar. Omit for all calendars. Cannot be combined with project_id. */
+                    project_ids?: (string | "account")[];
+                    /** @description Follow your starred projects as they change (the calendar's Starred pick). Cannot be combined with project_id or project_ids (422). */
+                    starred_only?: boolean;
                     /** @description Include due to-dos and cards */
                     include_tasks?: boolean;
                     /** @enum {string} */
@@ -5794,6 +6794,8 @@ export interface operations {
                          * @description The public /feeds/{token}.ics URL; the token is the credential
                          */
                         url: string;
+                        /** @description Acknowledged selection, or null for all calendars */
+                        project_ids?: string[] | null;
                     };
                 };
             };
@@ -7069,6 +8071,181 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
         };
     };
+    getMyGettingStarted: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Getting-started guidance */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description Where the person's sequence stands. active: guides may still be delivered. opted_out: the person stopped them. ended: the seven-day window passed. not_enrolled: no sequence (a client-only account, or an account that predates the feature).
+                         * @enum {string}
+                         */
+                        state: "active" | "opted_out" | "ended" | "not_enrolled";
+                        /** @description True whenever nothing more will be delivered (state is not active). Offer the stop control only when false. */
+                        stopped: boolean;
+                        messages: {
+                            /** Format: uuid */
+                            bulletin_id: string;
+                            title: string;
+                            excerpt: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    stopMyGettingStarted: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {boolean} */
+                    stopped: true;
+                };
+            };
+        };
+        responses: {
+            /** @description Getting-started guidance */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        state: "opted_out";
+                        /** @enum {boolean} */
+                        stopped: true;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description Only stopped: true is accepted */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getMyNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Your pad */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyNote"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    saveMyNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MyNoteSave"];
+            };
+        };
+        responses: {
+            /** @description The saved pad */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyNote"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description The pad changed since `base_updated_at`; nothing was written */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "stale";
+                            message: string;
+                            note: components["schemas"]["MyNote"];
+                        };
+                    };
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    restoreMyNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The restored pad */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyNote"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listMyNotes: {
         parameters: {
             query?: never;
@@ -7081,13 +8258,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Your notes */
+            /** @description The pad, as a list of one */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Recording"][];
+                    "application/json": components["schemas"]["MyNote"][];
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -7106,6 +8283,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Becomes a heading over the appended body */
                     title?: string | null;
                     /** @description Plain text; converted to HTML */
                     content?: string | null;
@@ -7115,13 +8293,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The created note */
+            /** @description The pad, with the jot appended */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Recording"];
+                    "application/json": components["schemas"]["MyNote"];
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -7141,7 +8319,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
+            /** @description Cleared */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7170,6 +8348,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Accepted and dropped */
                     title?: string | null;
                     /** @description Plain text; converted to HTML */
                     content?: string | null;
@@ -7179,13 +8358,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The updated note */
+            /** @description The saved pad */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Recording"];
+                    "application/json": components["schemas"]["MyNote"];
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -7438,6 +8617,266 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
         };
     };
+    getMyTimesheet: {
+        parameters: {
+            query?: {
+                /** @description Any day in the week; default today in the caller's zone. The week runs from the org's week start */
+                week?: string;
+                /** @description Whose week (a membership id); default the caller. Owners and admins only */
+                person_id?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The week */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetWeek"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    createTimesheetAbsence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description An active absence type
+                     */
+                    absence_type_id: string;
+                    /** Format: date */
+                    date: string;
+                    /** @description Decimal (`1.5`, at most two places, below 100) or hours and minutes (`1:30`); stored as decimal hours to two places (`0:07` is 0.12). At most 24 hours a person a day across entries */
+                    hours: string | number;
+                    /** @description Notes */
+                    description?: string | null;
+                    /**
+                     * Format: uuid
+                     * @description Whose time; default the caller. Owners and admins may name anyone on the team
+                     */
+                    person_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The entry */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetEntry"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Validation (code `invalid`: bad hours, a bad day, a removed absence type) or the 24-hour daily cap (code `daily_cap`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    addMyTimesheetRow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: date
+                     * @description Any day in the week; default today in the caller's zone
+                     */
+                    week?: string;
+                    /**
+                     * Format: uuid
+                     * @description A project with its Timesheet on
+                     */
+                    project_id: string;
+                    /**
+                     * Format: uuid
+                     * @description The item (a to-do, message, document, file, card or event in the project), or the project's timesheet; omit for time on the project itself
+                     */
+                    recording_id?: string;
+                    /**
+                     * Format: date
+                     * @description Required for a repeating event: the day
+                     */
+                    occurrence?: string;
+                    /**
+                     * Format: uuid
+                     * @description Whose week; default the caller. Owners and admins may name anyone on the project's team
+                     */
+                    person_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The row */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetWeekRow"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Validation (code `invalid`): a bad day, a repeating event without `occurrence`, a person who isn't a non-client member of the project, an archived or trashed item */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    removeMyTimesheetRow: {
+        parameters: {
+            query: {
+                /** @description The row's `recording_id` */
+                recording_id: string;
+                /** @description The row's `occurrence_date`, when it has one */
+                occurrence?: string;
+                /** @description Any day in the week; default today in the caller's zone. The week runs from the org's week start */
+                week?: string;
+                /** @description Whose week; default the caller. Owners and admins only */
+                person_id?: string;
+                /** @description Required as `true` when the row has hours that week: they're deleted for good */
+                delete_entries?: "true" | "false";
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                        /** @description How many entries went with it */
+                        deleted_entries: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The row has hours that week and `delete_entries` isn't `true` (code `invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    submitMyTimesheetWeek: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The week's first day, by the org's week start */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description Whose week (a membership id); default the caller. Owners and admins only
+                     */
+                    person_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The week's approval */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetWeekApproval"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Approvals are off (code `approvals_off`), or the week is already approved (code `week_state`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `weekStart` isn't a day the org's weeks start on (code `invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getUiState: {
         parameters: {
             query?: never;
@@ -7550,7 +8989,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Invitation sent */
+            /** @description Invitation queued for delivery */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -7567,6 +9006,17 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
+            /** @description Email delivery is temporarily paused (code email_paused). Retry after the indicated delay. */
+            503: {
+                headers: {
+                    /** @description Retry delay in seconds */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getPerson: {
@@ -7998,7 +9448,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Resent */
+            /** @description Invitation reminder queued for delivery */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -8012,6 +9462,17 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description Email delivery is temporarily paused (code email_paused). Retry after the indicated delay. */
+            503: {
+                headers: {
+                    /** @description Retry delay in seconds */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getInviteLink: {
@@ -8223,6 +9684,8 @@ export interface operations {
                     show_activity?: boolean;
                     clients_enabled?: boolean;
                     client_company_name?: string | null;
+                    /** @description The project's Timesheet switch; turning it off hides its timesheets and deletes nothing */
+                    timesheet_enabled?: boolean;
                 };
             };
         };
@@ -8249,6 +9712,35 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
+        };
+    };
+    getProjectAudience: {
+        parameters: {
+            query?: {
+                /** @description `true` for an item visible to clients (its audience includes the project's clients). Omitted or `false` means a team-only item. */
+                visible_to_clients?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item's audience */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectAudience"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
         };
     };
     listProjectEvents: {
@@ -8911,6 +10403,150 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    listProjectTimesheet: {
+        parameters: {
+            query?: {
+                /** @description 1-based page number */
+                page?: number;
+                /** @description Page size, default and cap 100 */
+                per_page?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entries, newest day first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetEntry"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    downloadProjectTimesheetCsv: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The CSV file (Content-Disposition: attachment; filename="timesheet-YYYY-MM-DD.csv", dated the caller's today) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createProjectTimesheetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: date
+                     * @description The day the time was spent; future days are accepted
+                     */
+                    date: string;
+                    /** @description Decimal (`1.5`, at most two places, below 100) or hours and minutes (`1:30`); stored as decimal hours to two places (`0:07` is 0.12). At most 24 hours a person a day across entries */
+                    hours: string | number;
+                    /** @description Notes */
+                    description?: string | null;
+                    /**
+                     * Format: uuid
+                     * @description Whose time (a membership id); defaults to the caller. Admins and owners may name anyone on the project's team; members only themselves (403 otherwise)
+                     */
+                    person_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The entry */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetEntry"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Validation (code `invalid`: hours not like 1.5 or 1:30, zero hours, a bad day, a repeating event without `occurrence`, a person who isn't a non-client member of the project; archived and trashed items take no new time) or the 24-hour daily cap (code `daily_cap`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listProjectTimesheetItems: {
+        parameters: {
+            query?: {
+                /** @description Any day in the week; default today in the caller's zone. The week runs from the org's week start */
+                week?: string;
+                /** @description Narrows by title */
+                q?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetPickerItem"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
     listProjectTools: {
         parameters: {
             query?: never;
@@ -9349,7 +10985,7 @@ export interface operations {
                     /** @description Questions only: replace who's asked (new askees get subscribed) */
                     membership_ids?: string[];
                     /** @description To-dos only: set/replace the repeat schedule (merged into meta.recurrence); null stops the series */
-                    recurrence?: components["schemas"]["RecordingRecurrence"] | null;
+                    recurrence?: components["schemas"]["RecordingRecurrence"];
                 };
             };
         };
@@ -9623,6 +11259,50 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    createCardWithSteps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    /** @description Rich HTML; sanitized server-side. Wins over content if both sent */
+                    content_html?: string;
+                    /** Format: date */
+                    due_on?: string;
+                    assignee_ids?: string[];
+                    steps?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The created recording */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recording"] & {
+                        created_step_count: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            402: components["responses"]["PlanLimit"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
         };
@@ -9798,7 +11478,7 @@ export interface operations {
                     /** @description Messages, documents, linked files: who's notified when this posts; they become the thread's exact subscriber set */
                     notify?: ("everyone" | "none") | string[];
                     /** @description Dated to-dos only: the repeat schedule, stored as meta.recurrence */
-                    recurrence?: components["schemas"]["RecordingRecurrence"] | null;
+                    recurrence?: components["schemas"]["RecordingRecurrence"];
                 };
             };
         };
@@ -10799,6 +12479,138 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listRecordingTimesheet: {
+        parameters: {
+            query?: {
+                /** @description Required for a repeating event: the day */
+                occurrence?: string;
+                /** @description 1-based page number */
+                page?: number;
+                /** @description Page size, default and cap 100 */
+                per_page?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entries, newest day first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetEntry"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            /** @description A repeating event without `occurrence`, or `occurrence` on one that doesn't repeat (code `invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    downloadRecordingTimesheetCsv: {
+        parameters: {
+            query?: {
+                /** @description Required for a repeating event: the day */
+                occurrence?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The CSV file (Content-Disposition: attachment; filename="timesheet-YYYY-MM-DD.csv", dated the caller's today) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createRecordingTimesheetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: date
+                     * @description The day the time was spent; future days are accepted
+                     */
+                    date: string;
+                    /** @description Decimal (`1.5`, at most two places, below 100) or hours and minutes (`1:30`); stored as decimal hours to two places (`0:07` is 0.12). At most 24 hours a person a day across entries */
+                    hours: string | number;
+                    /** @description Notes */
+                    description?: string | null;
+                    /**
+                     * Format: uuid
+                     * @description Whose time (a membership id); defaults to the caller. Admins and owners may name anyone on the project's team; members only themselves (403 otherwise)
+                     */
+                    person_id?: string;
+                } & {
+                    /**
+                     * Format: date
+                     * @description Required for a repeating event: the day (the occurrence key from `?occurrence=` links). A day since split off the series is still that day
+                     */
+                    occurrence?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The entry */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetEntry"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Validation (code `invalid`: hours not like 1.5 or 1:30, zero hours, a bad day, a repeating event without `occurrence`, a person who isn't a non-client member of the project; archived and trashed items take no new time) or the 24-hour daily cap (code `daily_cap`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     listChatUploads: {
         parameters: {
             query?: never;
@@ -11138,6 +12950,96 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getTimesheetReport: {
+        parameters: {
+            query?: {
+                /** @description With end_date; default the last month, ending today in the caller's zone. At most 366 days */
+                start_date?: string;
+                /** @description With start_date, inclusive */
+                end_date?: string;
+                /** @description One person (membership id); default everyone */
+                person_id?: string;
+                /** @description One project; default all projects plus absence */
+                project_id?: string;
+                /** @description Approvals on only; default approved (and unchanged since) */
+                status?: "approved" | "submitted" | "changed" | "not_submitted";
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entries, newest day first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetEntry"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            /** @description start_date without end_date (or the reverse), end before start, or a range over 366 days (code `invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    downloadTimesheetReportCsv: {
+        parameters: {
+            query?: {
+                /** @description With end_date; default the last month, ending today in the caller's zone. At most 366 days */
+                start_date?: string;
+                /** @description With start_date, inclusive */
+                end_date?: string;
+                /** @description One person (membership id); default everyone */
+                person_id?: string;
+                /** @description One project; default all projects plus absence */
+                project_id?: string;
+                /** @description Approvals on only; default approved (and unchanged since) */
+                status?: "approved" | "submitted" | "changed" | "not_submitted";
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The CSV file (Content-Disposition: attachment; filename="timesheet-YYYY-MM-DD.csv", dated the caller's today) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            /** @description start_date without end_date (or the reverse), end before start, or a range over 366 days (code `invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listAssignablePeople: {
@@ -11503,6 +13405,13 @@ export interface operations {
                     restrict_content_actions?: boolean;
                     restrict_public_links?: boolean;
                     limit_comment_editing?: boolean;
+                    /**
+                     * @description Owners and admins: the day the weekly timesheet starts. Rows already added to a week show in the new week that holds their day
+                     * @enum {string}
+                     */
+                    timesheet_week_start?: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
+                    /** @description Owners and admins: turn timesheet approvals on or off. Off hides every week's status and keeps it; on shows them again */
+                    timesheet_approvals_enabled?: boolean;
                 };
             };
         };
@@ -11759,6 +13668,358 @@ export interface operations {
             402: components["responses"]["PlanLimit"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
+        };
+    };
+    getTimesheetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                entryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetEntry"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deleteTimesheetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                entryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        ok: true;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateTimesheetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                entryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: date */
+                    date?: string;
+                    /** @description `1.5` or `1:30`; more than zero */
+                    hours?: string | number;
+                    description?: string | null;
+                    /** Format: uuid */
+                    person_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetEntry"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Validation (code `invalid`: hours not like 1.5 or 1:30, zero hours, a bad day, a repeating event without `occurrence`, a person who isn't a non-client member of the project; archived and trashed items take no new time) or the 24-hour daily cap (code `daily_cap`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTimesheetAbsenceTypes: {
+        parameters: {
+            query?: {
+                /** @description `true` adds the removed ones */
+                include_archived?: "true" | "false";
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The absence types */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetAbsenceType"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createTimesheetAbsenceType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The absence type */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetAbsenceType"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description An empty name, one over 60 characters, or one an active type already has (code `invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateTimesheetAbsenceType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                absenceTypeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    /** @description Types sort by position; any number between two neighbors' puts it between them */
+                    position?: number;
+                    archived?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The absence type */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetAbsenceType"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description An empty name, one over 60 characters, or one an active type already has (code `invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getTimesheetApprovals: {
+        parameters: {
+            query?: {
+                /** @description Any day in the week; default today in the caller's zone */
+                week?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The week's approvals */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetApprovals"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Approvals are off (code `approvals_off`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    approveTimesheetWeek: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description Whose week */
+                membershipId: string;
+                /** @description The submitted week's first day */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The week's approval */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetWeekApproval"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Approvals are off (code `approvals_off`), or the week was never submitted, or was rejected and waits for its person to resubmit it (code `week_state`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    rejectTimesheetWeek: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description Whose week */
+                membershipId: string;
+                /** @description The submitted week's first day */
+                weekStart: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Why, for the person: required, at most 1,000 characters once trimmed */
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The week's approval */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimesheetWeekApproval"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Approvals are off (code `approvals_off`), or the week was never submitted or is already rejected (code `week_state`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No reason, or one over 1,000 characters (code `invalid`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listTrash: {
@@ -12195,11 +14456,17 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description ExponentPushToken[…] */
-                    expo_push_token: string;
+                    /** @description The transport's token: `ExponentPushToken[…]` for `expo`, the hex device token for `apns`. Required unless `expo_push_token` is sent. */
+                    token?: string;
+                    kind?: components["schemas"]["PushTokenKind"];
                     /** @enum {string} */
                     platform: "ios" | "android";
                     device_name?: string | null;
+                    /**
+                     * @deprecated
+                     * @description Deprecated: the 1.x app's field, equivalent to `token` with `kind: "expo"`.
+                     */
+                    expo_push_token?: string;
                 };
             };
         };
@@ -12211,12 +14478,18 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        expo_push_token: string;
+                        token: string;
+                        kind: components["schemas"]["PushTokenKind"];
                         /** @enum {string} */
                         platform: "ios" | "android";
-                        device_name?: string | null;
+                        device_name: string | null;
                         /** Format: date-time */
                         last_seen_at: string;
+                        /**
+                         * @deprecated
+                         * @description Deprecated alias of `token` for Expo devices; null for native tokens.
+                         */
+                        expo_push_token: string | null;
                     };
                 };
             };
@@ -12229,7 +14502,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The Expo push token, URL-encoded */
+                /** @description The device's push token as registered, URL-encoded */
                 token: string;
             };
             cookie?: never;
@@ -12242,6 +14515,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    sendTestPush: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many devices were addressed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Devices the push went out to */
+                        sent: number;
+                        /** @description Devices registered before dead tokens were pruned */
+                        devices: number;
+                    };
+                };
             };
             401: components["responses"]["Unauthenticated"];
         };

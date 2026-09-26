@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Thicket",
-    "version": "2026-08-29",
+    "version": "2026-09-25",
     "description": "Thicket's versioned REST API. The web app runs on the same routes, so everything the product does is here. Human-readable reference: https://www.thickethq.com/developers/api",
     "contact": {
       "name": "Thicket support",
@@ -21,6 +21,9 @@
   "security": [
     {
       "personalAccessToken": []
+    },
+    {
+      "sessionToken": []
     }
   ],
   "tags": [
@@ -65,6 +68,9 @@
     },
     {
       "name": "Search & reports"
+    },
+    {
+      "name": "Timesheets"
     },
     {
       "name": "Trash & admin"
@@ -1565,14 +1571,8 @@
                     "default": false
                   },
                   "recurrence": {
-                    "oneOf": [
-                      {
-                        "$ref": "#/components/schemas/CalendarRecurrence"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "$ref": "#/components/schemas/CalendarRecurrence",
+                    "description": "The repeat schedule; null means the event does not recur (clears it on update)"
                   },
                   "participant_ids": {
                     "type": "array",
@@ -1618,7 +1618,7 @@
           "Calendar"
         ],
         "summary": "Edit an event",
-        "description": "Edits apply to the whole series for recurring events; invitees are notified of the change. Same fields as create, all optional. `recurrence: null` stops the event recurring; to drop a single occurrence use the occurrences DELETE endpoint instead.",
+        "description": "Edits apply to the whole series for recurring events; to change one day, or one day onward, use the occurrences PATCH endpoint, and to delete them the occurrences DELETE. Invitees are notified of the change. Same fields as create, all optional. `recurrence: null` stops the event recurring. A series keeps its own `exdates` whatever the request sends: each names a day that lives on as its own event or in the trash.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -1686,14 +1686,8 @@
                     "type": "boolean"
                   },
                   "recurrence": {
-                    "oneOf": [
-                      {
-                        "$ref": "#/components/schemas/CalendarRecurrence"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "$ref": "#/components/schemas/CalendarRecurrence",
+                    "description": "The repeat schedule; null means the event does not recur (clears it on update)"
                   },
                   "participant_ids": {
                     "type": "array",
@@ -1782,7 +1776,7 @@
           "Calendar"
         ],
         "summary": "Delete an occurrence of a recurring event",
-        "description": "For recurring events only. Default: drop just this occurrence (an exdate, `result: excluded`). `?mode=future`: end the series the day before (`result: truncated`); from the first occurrence that trashes the whole series (`result: trashed`). `date` is the occurrence's `occurrence_key`, the anchor-zone day key from the calendar listing; never derive it from `start` client-side.",
+        "description": "The trash prompt for recurring events (\"Only delete this event\" / \"Also delete all future events\"); recurring events only. What's deleted goes to the trash (`trashed_id`), and restoring it (`PUT /recordings/{trashed_id}/status/active`) puts the dates back into the series. Default: just this occurrence (`result: excluded`; the day is trashed as its own event). `?mode=future`: this and every later occurrence (`result: truncated`; the series ends the day before and the rest is trashed as one repeating event); from the first occurrence that trashes the whole series (`result: trashed`, `trashed_id` is the event itself). `date` is the occurrence's `occurrence_key`, the anchor-zone day key from the calendar listing; never derive it from `start` client-side. 404 when the series has no occurrence that day.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -1828,7 +1822,8 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "result"
+                    "result",
+                    "trashed_id"
                   ],
                   "properties": {
                     "result": {
@@ -1838,6 +1833,11 @@
                         "truncated",
                         "trashed"
                       ]
+                    },
+                    "trashed_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "What went to the trash; restoring it undoes the deletion"
                     }
                   }
                 }
@@ -1849,6 +1849,142 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateEventOccurrence",
+        "tags": [
+          "Calendar"
+        ],
+        "summary": "Edit an occurrence of a recurring event",
+        "description": "The edit prompt for recurring events. Default (\"No, just change this event\"): the day splits off as its own event, linked to the series by `series_id` and `occurrence_key`, and takes the edit. `?mode=future` (\"Yes, change future occurrences too\"): the series ends the day before and a copy repeating from this day takes the edit; from the first occurrence the whole series is edited in place. Invitees hear about the change as with any edit, and a new date or time logs `rescheduled`. Returns the event that now carries the change, or the series unchanged when nothing changed. Same fields as editing an event, all optional. 404 when the series has no occurrence that day.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "The occurrence's anchor-zone day key (YYYY-MM-DD)"
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "occurrence",
+                "future"
+              ],
+              "default": "occurrence"
+            },
+            "description": "`future`: this and every later occurrence"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  },
+                  "content": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 10000,
+                    "description": "Plain-text notes, converted to HTML"
+                  },
+                  "content_html": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 100000,
+                    "description": "Rich notes (sanitized); wins over `content` when both are sent"
+                  },
+                  "starts_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "ends_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "all_day": {
+                    "type": "boolean"
+                  },
+                  "link": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uri"
+                  },
+                  "circled": {
+                    "type": "boolean"
+                  },
+                  "recurrence": {
+                    "$ref": "#/components/schemas/CalendarRecurrence",
+                    "description": "`?mode=future` only: how the event repeats from this day on (a single day repeats with its series). `exdates` is ignored"
+                  },
+                  "participant_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 100,
+                    "description": "Replaces the invitee set"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The event carrying the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Recording"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
           }
         }
       }
@@ -1907,7 +2043,29 @@
                   "project_id": {
                     "type": "string",
                     "format": "uuid",
-                    "description": "Limit the feed to one project"
+                    "description": "Legacy single-project scope; cannot be combined with project_ids"
+                  },
+                  "project_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        {
+                          "type": "string",
+                          "const": "account"
+                        }
+                      ]
+                    },
+                    "description": "Selected projects and/or the account calendar. Omit for all calendars. Cannot be combined with project_id."
+                  },
+                  "starred_only": {
+                    "type": "boolean",
+                    "description": "Follow your starred projects as they change (the calendar's Starred pick). Cannot be combined with project_id or project_ids (422)."
                   },
                   "include_tasks": {
                     "type": "boolean",
@@ -1940,6 +2098,16 @@
                       "type": "string",
                       "format": "uri",
                       "description": "The public /feeds/{token}.ics URL; the token is the credential"
+                    },
+                    "project_ids": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Acknowledged selection, or null for all calendars"
                     }
                   }
                 }
@@ -3463,7 +3631,7 @@
           "Search & reports"
         ],
         "summary": "Your open assignments",
-        "description": "Open work assigned to you across projects, grouped into `priorities` (your Up Next list, in your order; items carry `priority_id`) and `non_priorities`. Card steps are normalized under their parent card as `children`: the card is pulled in even when only a step is assigned, and a prioritized step surfaces its card. Top-level items carry `assigned_to_me`, false only for a pulled-in parent card, which is not your assignment and cannot go Up Next.",
+        "description": "Open to-dos, cards and card steps assigned to you across projects, grouped into `priorities` (your Up Next list, in your order; items carry `priority_id`) and `non_priorities`. Card steps are normalized under their parent card as `children`: the card is pulled in even when only a step is assigned, and a prioritized step surfaces its card. Top-level items carry `assigned_to_me`, false only for a pulled-in parent card, which is not your assignment and cannot go Up Next. Schedule events you are invited to are not assignments: they live on /my/events and /my/do-today.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -3511,7 +3679,7 @@
           "Search & reports"
         ],
         "summary": "Your completed assignments",
-        "description": "Newest first; assignments on archived or trashed recordings are excluded.",
+        "description": "Completed to-dos, cards and card steps, newest first; assignments on archived or trashed recordings are excluded.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -3544,7 +3712,7 @@
           "Search & reports"
         ],
         "summary": "Your dated assignments by due window",
-        "description": "Dated open assignments in one due window. `overdue` is the default; `due_later_this_week` runs through this Sunday and `due_next_week` covers next Monday to Sunday, computed in your time zone.",
+        "description": "Dated open to-dos, cards and card steps in one due window. `overdue` is the default; `due_later_this_week` runs through this Sunday and `due_next_week` covers next Monday to Sunday, computed in your time zone.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -3642,7 +3810,7 @@
           "Search & reports"
         ],
         "summary": "Add an assignment to Up Next",
-        "description": "Adds one of your own open assignments to the bottom of Up Next (idempotent). Anything that is not your assignment is a 404.",
+        "description": "Adds one of your own open assignments (a to-do, card or card step) to the bottom of Up Next (idempotent). Anything else, a schedule event included, is a 404.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -3828,7 +3996,7 @@
           "Me"
         ],
         "summary": "Your bookmarks",
-        "description": "Personal saved links to recordings, newest first.",
+        "description": "Personal saved links to recordings, newest first. Only bookmarks the caller can still open are listed: one in a project they left, or on an item no longer shared with them, reappears if access returns.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -4207,14 +4375,14 @@
         }
       }
     },
-    "/api/v1/{orgSlug}/my/notes": {
+    "/api/v1/{orgSlug}/my/getting-started": {
       "get": {
-        "operationId": "listMyNotes",
+        "operationId": "getMyGettingStarted",
         "tags": [
-          "Me"
+          "Notifications"
         ],
-        "summary": "Your private notes",
-        "description": "My Notes: private rich-text notes with no project, visible only to their creator. Rows are `personal_note` recordings.",
+        "summary": "Getting-started guide catalog and notification preference",
+        "description": "Evergreen guides this role may open (none for clients; the invitation guide for owners and admins). Fetch message content using the existing bulletin detail endpoint. Reading there acknowledges the guide; the catalog does not mark anything read.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -4222,13 +4390,301 @@
         ],
         "responses": {
           "200": {
-            "description": "Your notes",
+            "description": "Getting-started guidance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "state",
+                    "stopped",
+                    "messages"
+                  ],
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "opted_out",
+                        "ended",
+                        "not_enrolled"
+                      ],
+                      "description": "Where the person's sequence stands. active: guides may still be delivered. opted_out: the person stopped them. ended: the seven-day window passed. not_enrolled: no sequence (a client-only account, or an account that predates the feature)."
+                    },
+                    "stopped": {
+                      "type": "boolean",
+                      "description": "True whenever nothing more will be delivered (state is not active). Offer the stop control only when false."
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "bulletin_id",
+                          "title",
+                          "excerpt"
+                        ],
+                        "properties": {
+                          "bulletin_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "excerpt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "stopMyGettingStarted",
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Stop getting-started notifications",
+        "description": "Stops the sequence for this person across workspaces and marks its current-workspace messages read. Work notifications and email preferences are unchanged. The guides remain readable. Idempotent, and accepted in any state.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "stopped"
+                ],
+                "properties": {
+                  "stopped": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Getting-started guidance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "state",
+                    "stopped"
+                  ],
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "opted_out"
+                      ]
+                    },
+                    "stopped": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "422": {
+            "description": "Only stopped: true is accepted"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/note": {
+      "get": {
+        "operationId": "getMyNote",
+        "tags": [
+          "Me"
+        ],
+        "summary": "Your notes",
+        "description": "My Notes: one private rich-text scratchpad per person, created empty the first time it is read. Only its creator can ever read it.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your pad",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyNote"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "saveMyNote",
+        "tags": [
+          "Me"
+        ],
+        "summary": "Save your notes",
+        "description": "The autosave. Saving what is already stored is a no-op that leaves `updated_at` alone. Pass `base_updated_at` to refuse a stale write: a 409 carries the current pad under `error.note` and writes nothing.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MyNoteSave"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved pad",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyNote"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "409": {
+            "description": "The pad changed since `base_updated_at`; nothing was written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "note"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "stale"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "note": {
+                          "$ref": "#/components/schemas/MyNote"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/note/restore": {
+      "post": {
+        "operationId": "restoreMyNote",
+        "tags": [
+          "Me"
+        ],
+        "summary": "Restore your previous notes",
+        "description": "Swaps the pad with its restore point (`previous_version`), so restoring again undoes the restore. 404 when there is no earlier version yet.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The restored pad",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyNote"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/notes": {
+      "get": {
+        "operationId": "listMyNotes",
+        "deprecated": true,
+        "tags": [
+          "Me"
+        ],
+        "summary": "Your notes as a one-item list (deprecated)",
+        "description": "Legacy note list, kept only for the 1.5.1 App Store app and removed with the native app's My Notes screen (parity-followups-sweep row 48). Use `/my/note`. Returns `[pad]`: the one scratchpad, created empty if needed.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pad, as a list of one",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
+                  "maxItems": 1,
                   "items": {
-                    "$ref": "#/components/schemas/Recording"
+                    "$ref": "#/components/schemas/MyNote"
                   }
                 }
               }
@@ -4241,11 +4697,12 @@
       },
       "post": {
         "operationId": "createMyNote",
+        "deprecated": true,
         "tags": [
           "Me"
         ],
-        "summary": "Create a private note",
-        "description": "`content_html` (rich, sanitized) wins over `content` (plain text, converted to HTML).",
+        "summary": "Append to your notes (deprecated)",
+        "description": "Legacy note list, kept only for the 1.5.1 App Store app and removed with the native app's My Notes screen (parity-followups-sweep row 48). Use `/my/note`. There is no second note to create: the jot is appended to the end of the pad, `title` as a heading over it, and the pad comes back as 201.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -4263,7 +4720,8 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 10000
+                    "maxLength": 10000,
+                    "description": "Becomes a heading over the appended body"
                   },
                   "content": {
                     "type": [
@@ -4288,11 +4746,11 @@
         },
         "responses": {
           "201": {
-            "description": "The created note",
+            "description": "The pad, with the jot appended",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Recording"
+                  "$ref": "#/components/schemas/MyNote"
                 }
               }
             }
@@ -4309,11 +4767,12 @@
     "/api/v1/{orgSlug}/my/notes/{noteId}": {
       "patch": {
         "operationId": "updateMyNote",
+        "deprecated": true,
         "tags": [
           "Me"
         ],
-        "summary": "Edit a note",
-        "description": "Send only the fields to change; `content_html` wins over `content`. Creator-only: anyone else's note is a 404.",
+        "summary": "Save your notes by id (deprecated)",
+        "description": "Legacy note list, kept only for the 1.5.1 App Store app and removed with the native app's My Notes screen (parity-followups-sweep row 48). Use `/my/note`. Only the pad's own id resolves; anything else is a 404. The pad has no title, so `title` is accepted and dropped; `content_html` wins over `content` and replaces the whole pad, with no stale check.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -4340,7 +4799,8 @@
                       "string",
                       "null"
                     ],
-                    "maxLength": 10000
+                    "maxLength": 10000,
+                    "description": "Accepted and dropped"
                   },
                   "content": {
                     "type": [
@@ -4365,11 +4825,11 @@
         },
         "responses": {
           "200": {
-            "description": "The updated note",
+            "description": "The saved pad",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Recording"
+                  "$ref": "#/components/schemas/MyNote"
                 }
               }
             }
@@ -4387,11 +4847,12 @@
       },
       "delete": {
         "operationId": "deleteMyNote",
+        "deprecated": true,
         "tags": [
           "Me"
         ],
-        "summary": "Delete a note",
-        "description": "Permanent: notes skip the trash. Creator-only.",
+        "summary": "Clear your notes (deprecated)",
+        "description": "Legacy note list, kept only for the 1.5.1 App Store app and removed with the native app's My Notes screen (parity-followups-sweep row 48). Use `/my/note`. Clears the pad (its content becomes null; the restore point keeps what it held). The row itself stays: the pad is one row per person for good.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -4408,7 +4869,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Deleted",
+            "description": "Cleared",
             "content": {
               "application/json": {
                 "schema": {
@@ -4925,6 +5386,435 @@
         }
       }
     },
+    "/api/v1/{orgSlug}/my/timesheet": {
+      "get": {
+        "operationId": "getMyTimesheet",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Read a week of the weekly timesheet",
+        "description": "One person's week, Mon to Sun or from whatever day the org's week starts: its rows (the ones added that week, plus one for every item, event day or project the week's hours are on), the Absence rows (every active absence type, and a removed one while it has hours that week), the week's counted entries and what the caller may change. Each week starts fresh: nothing carries over. Time in projects the caller can't see stays out. Members read their own week; owners and admins anyone's on the team (`person_id`).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "week",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Any day in the week; default today in the caller's zone. The week runs from the org's week start"
+          },
+          {
+            "name": "person_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Whose week (a membership id); default the caller. Owners and admins only"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The week",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetWeek"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/timesheet/absences": {
+      "post": {
+        "operationId": "createTimesheetAbsence",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Log absence",
+        "description": "Time off (vacation, sick leave, …) belongs to the org, not a project: the entry has no project and no parent. Only the person, owners and admins see it; it never shows on a project timesheet.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "absence_type_id",
+                  "date",
+                  "hours"
+                ],
+                "properties": {
+                  "absence_type_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "An active absence type"
+                  },
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "hours": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "description": "Decimal (`1.5`, at most two places, below 100) or hours and minutes (`1:30`); stored as decimal hours to two places (`0:07` is 0.12). At most 24 hours a person a day across entries"
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1000,
+                    "description": "Notes"
+                  },
+                  "person_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Whose time; default the caller. Owners and admins may name anyone on the team"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Validation (code `invalid`: bad hours, a bad day, a removed absence type) or the 24-hour daily cap (code `daily_cap`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/timesheet/rows": {
+      "post": {
+        "operationId": "addMyTimesheetRow",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Add a row to a week",
+        "description": "A row the week keeps without hours: a project, with an item in it or not. The same guards as logging time there (Timesheet on, the item active, the person on the project). A row the week already has comes back as it is.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "project_id"
+                ],
+                "properties": {
+                  "week": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Any day in the week; default today in the caller's zone"
+                  },
+                  "project_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "A project with its Timesheet on"
+                  },
+                  "recording_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "The item (a to-do, message, document, file, card or event in the project), or the project's timesheet; omit for time on the project itself"
+                  },
+                  "occurrence": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Required for a repeating event: the day"
+                  },
+                  "person_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Whose week; default the caller. Owners and admins may name anyone on the project's team"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The row",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetWeekRow"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Validation (code `invalid`): a bad day, a repeating event without `occurrence`, a person who isn't a non-client member of the project, an archived or trashed item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeMyTimesheetRow",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Remove a row from a week",
+        "description": "Removes the row and, with `delete_entries=true`, its entries that week, permanently. Entries on other days of the event or in other weeks stay.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "recording_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The row's `recording_id`",
+            "required": true
+          },
+          {
+            "name": "occurrence",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "The row's `occurrence_date`, when it has one"
+          },
+          {
+            "name": "week",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Any day in the week; default today in the caller's zone. The week runs from the org's week start"
+          },
+          {
+            "name": "person_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Whose week; default the caller. Owners and admins only"
+          },
+          {
+            "name": "delete_entries",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "description": "Required as `true` when the row has hours that week: they're deleted for good"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "deleted_entries"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "deleted_entries": {
+                      "type": "integer",
+                      "description": "How many entries went with it"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "The row has hours that week and `delete_entries` isn't `true` (code `invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/timesheet/weeks/{weekStart}/submit": {
+      "post": {
+        "operationId": "submitMyTimesheetWeek",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Submit a week for approval",
+        "description": "While approvals are on: records the week that starts on `weekStart` with its hours as they are now. A changed or rejected week is resubmitted the same way; one already submitted and unchanged comes back as it is. Nothing locks: the week stays editable, and a later change reads `changed`. Notifies no one; the week appears on the approvals page. Members submit their own week, owners and admins anyone's on the team (`person_id`).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "weekStart",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "The week's first day, by the org's week start"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "person_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Whose week (a membership id); default the caller. Owners and admins only"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The week's approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetWeekApproval"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Approvals are off (code `approvals_off`), or the week is already approved (code `week_state`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`weekStart` isn't a day the org's weeks start on (code `invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/{orgSlug}/my/ui-state": {
       "get": {
         "operationId": "getUiState",
@@ -4932,7 +5822,7 @@
           "Me"
         ],
         "summary": "Your cross-device UI memory",
-        "description": "A free-form JSON object of personal UI state, e.g. `{collapsedColumns: {<projectId>: [columnIds]}}` for the saved-just-for-you card-table column collapse, keyed by project id.",
+        "description": "A free-form JSON object of personal UI state, e.g. `{collapsedColumns: {<projectId>: [columnIds]}}` for the saved-just-for-you card-table column collapse, keyed by project id, and `{docsView: {<folderId>: \"grid\"|\"list\"}}` for the Docs & Files grid/list choice, remembered per folder (the tool's root container carries the top level's choice, which the project page's Docs & Files card follows; a folder with no entry opens the way its nearest ancestor with one does, else `list`).",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -4961,7 +5851,7 @@
           "Me"
         ],
         "summary": "Merge into your UI memory",
-        "description": "A shallow top-level merge: each key you send replaces that key wholesale, so send `collapsedColumns` complete. Returns the merged state.",
+        "description": "A shallow top-level merge: each key you send replaces that key wholesale, so send `collapsedColumns` and `docsView` complete. Returns the merged state.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -5006,7 +5896,7 @@
           "People"
         ],
         "summary": "List the organization's people",
-        "description": "Active members with role, title, company, and out-of-office dates. Soft-removed people are excluded.",
+        "description": "Active members with role, title, company, out-of-office dates, and whether their email address is bouncing. Soft-removed people are excluded.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -5040,7 +5930,7 @@
           "People"
         ],
         "summary": "Invite someone",
-        "description": "Admins and up; owner invites require an owner. `note` rides the invitation email as plain text; `project_ids` are granted on accept. The email carries a decline link that stamps the invite declined and notifies the inviter. Plan seat limits apply.",
+        "description": "Admins and up; owner invites require an owner. `note` rides the invitation email as plain text; `project_ids` are granted on accept. The email carries a decline link that stamps the invite declined and notifies the inviter. Plan seat limits apply. One invitation per address per workspace: inviting an address that already has a pending invitation folds into it. New `project_ids` pool onto that invitation and go out as the 'added you to' follow-up on its original join link (201); with nothing new to grant the call answers 403 (already_invited) and sends nothing, resend is the nudge. A declined or expired invitation is revived and re-sent on the same link, under the reminder cooldown (403 invitation_send_cooldown inside an hour of the last invitation email to that address). The invitation and email job are committed together; email delivery runs after commit and retries transient failures. Success confirms queuing, not provider delivery. A global email pause returns 503 (email_paused) before changing the invitation.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -5097,7 +5987,7 @@
         },
         "responses": {
           "201": {
-            "description": "Invitation sent",
+            "description": "Invitation queued for delivery",
             "content": {
               "application/json": {
                 "schema": {
@@ -5129,6 +6019,24 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          },
+          "503": {
+            "description": "Email delivery is temporarily paused (code email_paused). Retry after the indicated delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Retry delay in seconds"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -5902,7 +6810,7 @@
           "People"
         ],
         "summary": "Resend an invitation",
-        "description": "Nudge a pending invitee: fresh email, same still-valid token (admin and up). Also revives a declined invitation so it can be accepted again.",
+        "description": "Nudge a pending invitee: fresh email, same still-valid token (admin and up). Also revives a declined invitation so it can be accepted again (seat limits apply to the revive). Reminders rest an hour: inside an hour of the last invitation email to that address the call answers 403 (invitation_send_cooldown) and sends nothing; the join link on the invitation stays the fallback. The invitation and email job are committed together; email delivery runs after commit and retries transient failures. Success confirms queuing, not provider delivery. A global email pause returns 503 (email_paused) before changing the invitation.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -5919,7 +6827,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Resent",
+            "description": "Invitation reminder queued for delivery",
             "content": {
               "application/json": {
                 "schema": {
@@ -5944,6 +6852,24 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Email delivery is temporarily paused (code email_paused). Retry after the indicated delay.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Retry delay in seconds"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -6217,7 +7143,7 @@
           "Projects"
         ],
         "summary": "Get a project",
-        "description": "The project plus its `tools`, each with its `container_id` (content is created under that container recording). `dock` is a deprecated alias of `tools` during the vocabulary transition.",
+        "description": "The project plus its `tools`, each with its `container_id` (content is created under that container recording). `dock` is a deprecated alias of `tools` during the vocabulary transition. `timesheet_enabled` is the project's Timesheet switch; clients never receive it.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -6257,7 +7183,7 @@
           "Projects"
         ],
         "summary": "Update a project",
-        "description": "`color` is a preset card color; anything outside the enum is a 400. `starts_on` and `ends_on` travel together: set both or null both, and `ends_on` must not precede `starts_on` (violations are a 400). `show_activity` toggles the project's activity rollups. `clients_enabled: false` reverts every recording in the project to team-only and drops client access (Work with clients); `client_company_name` is the label shown on the project. Move the project in or out of a home-screen folder with `folder_id` (or null).",
+        "description": "`color` is a preset card color; anything outside the enum is a 400. `starts_on` and `ends_on` travel together: set both or null both, and `ends_on` must not precede `starts_on` (violations are a 400). `show_activity` toggles the project's activity rollups. `clients_enabled: false` reverts every recording in the project to team-only and drops client access (Work with clients); `client_company_name` is the label shown on the project. Move the project in or out of a home-screen folder with `folder_id` (or null). `timesheet_enabled` switches the project's Timesheet (a project-details edit: never clients, and \"Restrict who can edit project details\" applies); the response then carries it.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -6345,6 +7271,10 @@
                       "null"
                     ],
                     "maxLength": 200
+                  },
+                  "timesheet_enabled": {
+                    "type": "boolean",
+                    "description": "The project's Timesheet switch; turning it off hides its timesheets and deletes nothing"
                   }
                 }
               }
@@ -6383,6 +7313,58 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/projects/{projectId}/audience": {
+      "get": {
+        "operationId": "getProjectAudience",
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Who an item in the project reaches",
+        "description": "The people and groups an item in this project reaches: everyone on the project's roster, every teammate when the project is open to everyone in the account, and clients only when the item is visible to clients. Removed people never appear, and a client caller sees only the people clients can see. This is the list the @-mention, assignee, subscriber and invitee pickers offer. `PUT /recordings/{id}/assignees` refuses (403) and `PUT /recordings/{id}/subscribers` skips anyone outside it, and a mention of anyone outside it is never delivered, so build pickers on this rather than on `GET /projects/{projectId}/people`. Pass the item's `visible_to_clients`, or for a new item the visibility it will have.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "visible_to_clients",
+            "in": "query",
+            "required": false,
+            "description": "`true` for an item visible to clients (its audience includes the project's clients). Omitted or `false` means a team-only item.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item's audience",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectAudience"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -7740,6 +8722,279 @@
         }
       }
     },
+    "/api/v1/{orgSlug}/projects/{projectId}/timesheet": {
+      "get": {
+        "operationId": "listProjectTimesheet",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "A project's timesheet",
+        "description": "Every counted entry in the project, on the project itself and on its items, newest day first then newest logged. Absence is never here. 404 while the project's Timesheet is off, and for clients.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "1-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Page size, default and cap 100"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries, newest day first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TimesheetEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/projects/{projectId}/timesheet/csv": {
+      "get": {
+        "operationId": "downloadProjectTimesheetCsv",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "A project's timesheet as CSV",
+        "description": "The project's timesheet as a CSV file: every counted entry, on the project itself and on its items, unpaginated. 404 while the project's Timesheet is off, and for clients.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The CSV file (Content-Disposition: attachment; filename=\"timesheet-YYYY-MM-DD.csv\", dated the caller's today)",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "description": "UTF-8 with no BOM, LF line endings and RFC 4180 quoting. Header `Date,Person,Hours,Project,Item,Notes,Created` (then `Status` while approvals are on), then one row per counted entry, newest day first, then newest logged. No totals row. Hours as decimal strings (\"2.0\", \"1.5\", \"0.12\"); Item is \"{Type}: {title}\" (To-do, Message, Document, File, Card or Event), empty for time on the project itself; Created is ISO 8601 with the caller's UTC offset. A Person, Project, Item or Notes value that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading apostrophe, so spreadsheets read it as text, never as a formula. While approvals are on, a last `Status` column says where each entry's week stands: Approved, Submitted, Changed, Rejected or Not submitted."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/projects/{projectId}/timesheet/entries": {
+      "post": {
+        "operationId": "createProjectTimesheetEntry",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Log time on a project",
+        "description": "Time on the project itself, not on any one item: the entry's `parent` is the project's timesheet (`type: \"timesheet\"`), made with the first. The project must have its Timesheet on and be neither archived nor in the trash. Writes no activity and sends no notification.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "date",
+                  "hours"
+                ],
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "The day the time was spent; future days are accepted"
+                  },
+                  "hours": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "description": "Decimal (`1.5`, at most two places, below 100) or hours and minutes (`1:30`); stored as decimal hours to two places (`0:07` is 0.12). At most 24 hours a person a day across entries"
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1000,
+                    "description": "Notes"
+                  },
+                  "person_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Whose time (a membership id); defaults to the caller. Admins and owners may name anyone on the project's team; members only themselves (403 otherwise)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Validation (code `invalid`: hours not like 1.5 or 1:30, zero hours, a bad day, a repeating event without `occurrence`, a person who isn't a non-client member of the project; archived and trashed items take no new time) or the 24-hour daily cap (code `daily_cap`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/projects/{projectId}/timesheet/items": {
+      "get": {
+        "operationId": "listProjectTimesheetItems",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "List what can take time in a week",
+        "description": "For adding a row to the weekly timesheet: the project's active to-dos, events, messages, documents, files and cards, in that order. Up to 25 of each type (the most recently changed), and every event in the week, one per day of a repeating one. `404` while the project's Timesheet is off.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "week",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Any day in the week; default today in the caller's zone. The week runs from the org's week start"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "Narrows by title"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TimesheetPickerItem"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
     "/api/v1/{orgSlug}/projects/{projectId}/tools": {
       "get": {
         "operationId": "listProjectTools",
@@ -8469,7 +9724,7 @@
           "Recordings"
         ],
         "summary": "Edit a recording",
-        "description": "All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed.",
+        "description": "All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed. The Not Now and Done card-table columns keep their `title` and their description (`content`/`content_html`): editing either refuses (404).",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -8590,14 +9845,7 @@
                     "description": "Questions only: replace who's asked (new askees get subscribed)"
                   },
                   "recurrence": {
-                    "oneOf": [
-                      {
-                        "$ref": "#/components/schemas/RecordingRecurrence"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ],
+                    "$ref": "#/components/schemas/RecordingRecurrence",
                     "description": "To-dos only: set/replace the repeat schedule (merged into meta.recurrence); null stops the series"
                   }
                 }
@@ -9116,7 +10364,7 @@
           "Recordings"
         ],
         "summary": "Replace the assignee set",
-        "description": "Assignment is always many-capable: PUT replaces the WHOLE set (always an array; [] clears). New assignees are notified and subscribed, and so is whoever assigned them: assigning follows the work.",
+        "description": "Assignment is always many-capable: PUT replaces the WHOLE set (always an array; [] clears). New assignees are notified and subscribed, and so is whoever assigned them: assigning follows the work. Everyone newly added must be able to open the recording (on the project's people, or a teammate on a project open to everyone; a client only on client-visible work; never a removed person), otherwise 403 and nothing changes.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -9175,6 +10423,123 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/recordings/{recordingId}/cards": {
+      "post": {
+        "operationId": "createCardWithSteps",
+        "tags": [
+          "Recordings"
+        ],
+        "summary": "Create a card with assignments and ordered steps atomically",
+        "description": "All content commits in one transaction. Invalid steps, assignments or parent access roll back the entire operation. Notifications are queued durably and delivered after commit. Returns a recording with created_step_count. Requires a column parent.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "recordingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 10000,
+                    "minLength": 1
+                  },
+                  "content_html": {
+                    "type": "string",
+                    "maxLength": 100000,
+                    "description": "Rich HTML; sanitized server-side. Wins over content if both sent"
+                  },
+                  "due_on": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "assignee_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 100
+                  },
+                  "steps": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 10000
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created recording",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Recording"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "created_step_count"
+                      ],
+                      "properties": {
+                        "created_step_count": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "402": {
+            "$ref": "#/components/responses/PlanLimit"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -9322,7 +10687,7 @@
           "Recordings"
         ],
         "summary": "List a container's children",
-        "description": "Default order is position/created; `sort`+`direction` choose another order, and `before`+`limit` page backwards by creation time (chat history uses this cursor). Rows carry `creator_name`, `creator_image`, `comment_count`, `last_comment_at` so list surfaces render bylines and comment badges without N+1 lookups; `chat_message` rows additionally carry their `cheers` and `client_approval` rows their `assignees`. `status=drafted` only ever returns the caller's own drafts.",
+        "description": "Default order is position/created; `sort`+`direction` choose another order, and `before`+`limit` page backwards by creation time (chat history uses this cursor). Rows carry `creator_name`, `creator_image`, `comment_count`, `last_comment_at` so list surfaces render bylines and comment badges without N+1 lookups; `chat_message` rows additionally carry their `cheers`, `client_approval` and `card` rows their `assignees` (with `image`), `card` rows `step_count`/`steps_done`, `column` rows `card_count`, `todolist` rows `todo_open_count`/`todo_done_count` (groups included), and `upload` rows `byte_size`/`content_type`: everything a list row shows, batched, never a fetch per row. `status=drafted` only ever returns the caller's own drafts.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -9606,14 +10971,7 @@
                     "description": "Messages, documents, linked files: who's notified when this posts; they become the thread's exact subscriber set"
                   },
                   "recurrence": {
-                    "oneOf": [
-                      {
-                        "$ref": "#/components/schemas/RecordingRecurrence"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ],
+                    "$ref": "#/components/schemas/RecordingRecurrence",
                     "description": "Dated to-dos only: the repeat schedule, stored as meta.recurrence"
                   }
                 }
@@ -10894,7 +12252,7 @@
           "Recordings"
         ],
         "summary": "Publish a public link",
-        "description": "Shares one message, document, or file read-only at /public/{token}: a 256-bit token, revocable, noindex, sanitized content only, no comments, no subtree. Idempotent while a link is active. Clients can't publish, and when the org restricts public links only owners and admins can (403).",
+        "description": "Shares one message, document, or file read-only at /public/{token}: a 256-bit token, revocable, noindex, sanitized content only, no comments, no subtree. Idempotent while a link is active. Clients can't publish, and when the org restricts public links only owners and admins can (403). An item in an archived or trashed project can't be published (403), and an existing link shows nothing until the project is active again.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -11090,7 +12448,7 @@
           "Check-ins"
         ],
         "summary": "Create a check-in question",
-        "description": "Askees (`membership_ids`) are auto-subscribed to answers and notified per occurrence. Schedule semantics: daily takes `days` (0=Sunday to 6=Saturday, default Monday to Friday, weekends allowed); weekly and every_other_week take `day_of_week` (the alternation anchors at creation); monthly means the first `day_of_week` of the month, or a fixed `day_of_month`. Clients can't create check-ins (403). Question edits go through the generic PATCH /recordings/{id}: `title`, plus question-only `schedule` and `membership_ids`.",
+        "description": "Askees (`membership_ids`) are auto-subscribed to answers and notified per occurrence. Schedule semantics: daily takes `days` (0=Sunday to 6=Saturday, default Monday to Friday, weekends allowed); weekly and every_other_week take `day_of_week` (the alternation anchors at creation); monthly means the first `day_of_week` of the month, or a fixed `day_of_month`. Clients can't create check-ins (403). Every askee must be on the project (a teammate on a project open to everyone counts), and a client only when the question is visible to clients; anyone else is 403, on create and when `membership_ids` adds people. Question edits go through the generic PATCH /recordings/{id}: `title`, plus question-only `schedule` and `membership_ids`.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -11221,7 +12579,7 @@
           "Recordings"
         ],
         "summary": "Archive, trash, or restore",
-        "description": "Works on ANY type; trash is recoverable. Tool containers refuse (except a folder with a parent, which archives and trashes with its contents cascading); drafts must publish before archiving; restoring a trashed draft returns it to drafted, never published. The governance restrict-content-actions toggle can refuse non-authors (403).",
+        "description": "Works on ANY type; trash is recoverable. Tool containers refuse (except a folder with a parent, which archives and trashes with its contents cascading); drafts must publish before archiving, and `active` on a draft is 404 (publish it with POST /recordings/{recordingId}/publish); restoring a trashed draft returns it to drafted, never published. Clients may trash and restore only what they posted and never archive or unarchive (403). The governance restrict-content-actions toggle can refuse non-authors (403).",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -11324,7 +12682,7 @@
           "Recordings"
         ],
         "summary": "Add or remove subscribers",
-        "description": "Deltas, not replacement: `add` and `remove` are membership id lists. `notify: \"now\"` pings added people immediately; `\"next\"` stays quiet until the next comment. Returns the updated subscriber set.",
+        "description": "Deltas, not replacement: `add` and `remove` are membership id lists. `notify: \"now\"` pings added people immediately; `\"next\"` stays quiet until the next comment. People in `add` who can't open the recording (off an invite-only project, a client on team-only work, removed) are skipped. Returns the updated subscriber set.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -11560,6 +12918,255 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/recordings/{recordingId}/timesheet": {
+      "get": {
+        "operationId": "listRecordingTimesheet",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "An item's timesheet",
+        "description": "One item's counted entries, newest day first. Items that take time: `todo`, `message`, `document`, `upload`, `card` and `calendar_event`; anything else is a 404. The project's timesheet id (an entry's `parent.id` when `parent.type` is `timesheet`) lists the time on the project itself. A repeating event's timesheet is one day's: pass `occurrence`. An item in the trash lists nothing until it's restored. 404 while the project's Timesheet is off, for an event on the account calendar, and for clients.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "recordingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "occurrence",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Required for a repeating event: the day"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "1-based page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Page size, default and cap 100"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries, newest day first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TimesheetEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "A repeating event without `occurrence`, or `occurrence` on one that doesn't repeat (code `invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/recordings/{recordingId}/timesheet/csv": {
+      "get": {
+        "operationId": "downloadRecordingTimesheetCsv",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "An item's timesheet as CSV",
+        "description": "One to-do's, message's, document's, file's, card's or event's timesheet as a CSV file, unpaginated: a repeating event's day with `occurrence`, or the project's own time when the id is its timesheet. Team only: clients receive 404.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "recordingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "occurrence",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Required for a repeating event: the day"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The CSV file (Content-Disposition: attachment; filename=\"timesheet-YYYY-MM-DD.csv\", dated the caller's today)",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "description": "UTF-8 with no BOM, LF line endings and RFC 4180 quoting. Header `Date,Person,Hours,Project,Item,Notes,Created` (then `Status` while approvals are on), then one row per counted entry, newest day first, then newest logged. No totals row. Hours as decimal strings (\"2.0\", \"1.5\", \"0.12\"); Item is \"{Type}: {title}\" (To-do, Message, Document, File, Card or Event), empty for time on the project itself; Created is ISO 8601 with the caller's UTC offset. A Person, Project, Item or Notes value that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading apostrophe, so spreadsheets read it as text, never as a formula. While approvals are on, a last `Status` column says where each entry's week stands: Approved, Submitted, Changed, Rejected or Not submitted."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/recordings/{recordingId}/timesheet/entries": {
+      "post": {
+        "operationId": "createRecordingTimesheetEntry",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Log time on an item",
+        "description": "The item must be active and one that takes time (to-do, message, document, file, card or event) in a project with its Timesheet on; the project's timesheet id logs time on the project itself. Each day of a repeating event is its own timesheet: pass `occurrence`, and the entry's `parent` is the recording holding that day (the series, a part of it, or the day split off on its own) with `occurrence_date` set. Events on the account calendar take no time. Writes no activity and sends no notification.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "recordingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "date",
+                      "hours"
+                    ],
+                    "properties": {
+                      "date": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "The day the time was spent; future days are accepted"
+                      },
+                      "hours": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ],
+                        "description": "Decimal (`1.5`, at most two places, below 100) or hours and minutes (`1:30`); stored as decimal hours to two places (`0:07` is 0.12). At most 24 hours a person a day across entries"
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 1000,
+                        "description": "Notes"
+                      },
+                      "person_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Whose time (a membership id); defaults to the caller. Admins and owners may name anyone on the project's team; members only themselves (403 otherwise)"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "occurrence": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Required for a repeating event: the day (the occurrence key from `?occurrence=` links). A day since split off the series is still that day"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Validation (code `invalid`: hours not like 1.5 or 1:30, zero hours, a bad day, a repeating event without `occurrence`, a person who isn't a non-client member of the project; archived and trashed items take no new time) or the 24-hour daily cap (code `daily_cap`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -12201,6 +13808,196 @@
         }
       }
     },
+    "/api/v1/{orgSlug}/reports/timesheet": {
+      "get": {
+        "operationId": "getTimesheetReport",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "The Timesheets report",
+        "description": "Every counted entry in a date range across the projects the caller can see: a flat list, newest day first, then newest logged. Not paginated; the range is the limit. An entry counts while its item exists: an item in the trash takes its hours out until it's restored, and an event parked on the account calendar takes them out until it moves back into a project. All projects means active and archived ones (templates and the sample project only when named in `project_id`), including projects whose Timesheet was since switched off, plus absence: everyone's for owners and admins, a member's own for them. `project_id` names one project and leaves absence out. While approvals are on, `status` reads one approval status (default `approved`: approved and unchanged since; `changed`: submitted or approved, then changed; rejected weeks stay out until resubmitted); it's ignored while they're off. Team only: clients receive 404.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "With end_date; default the last month, ending today in the caller's zone. At most 366 days"
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "With start_date, inclusive"
+          },
+          {
+            "name": "person_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "One person (membership id); default everyone"
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "One project; default all projects plus absence"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "submitted",
+                "changed",
+                "not_submitted"
+              ]
+            },
+            "description": "Approvals on only; default approved (and unchanged since)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries, newest day first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TimesheetEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "start_date without end_date (or the reverse), end before start, or a range over 366 days (code `invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/reports/timesheet/csv": {
+      "get": {
+        "operationId": "downloadTimesheetReportCsv",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "The Timesheets report as CSV",
+        "description": "The Timesheets report as a CSV file: the same parameters, defaults and entries as `getTimesheetReport`, one flat row per entry, newest day first, then newest logged. Absence rows carry Project \"Absence\" and the absence type's name as Item. Team only: clients receive 404.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "With end_date; default the last month, ending today in the caller's zone. At most 366 days"
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "With start_date, inclusive"
+          },
+          {
+            "name": "person_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "One person (membership id); default everyone"
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "One project; default all projects plus absence"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "submitted",
+                "changed",
+                "not_submitted"
+              ]
+            },
+            "description": "Approvals on only; default approved (and unchanged since)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The CSV file (Content-Disposition: attachment; filename=\"timesheet-YYYY-MM-DD.csv\", dated the caller's today)",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "description": "UTF-8 with no BOM, LF line endings and RFC 4180 quoting. Header `Date,Person,Hours,Project,Item,Notes,Created` (then `Status` while approvals are on), then one row per counted entry, newest day first, then newest logged. No totals row. Hours as decimal strings (\"2.0\", \"1.5\", \"0.12\"); Item is \"{Type}: {title}\" (To-do, Message, Document, File, Card or Event), empty for time on the project itself, and the absence type for absence (Project \"Absence\"); Created is ISO 8601 with the caller's UTC offset. A Person, Project, Item or Notes value that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading apostrophe, so spreadsheets read it as text, never as a formula. While approvals are on, a last `Status` column says where each entry's week stands: Approved, Submitted, Changed, Rejected or Not submitted."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "start_date without end_date (or the reverse), end before start, or a range over 366 days (code `invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/{orgSlug}/reports/todos/assigned": {
       "get": {
         "operationId": "listAssignablePeople",
@@ -12252,7 +14049,7 @@
           "Search & reports"
         ],
         "summary": "One person's open assignments",
-        "description": "That person's open, pending assignments across the projects the caller can see. `group_by=bucket` (default) sorts by project, `group_by=date` by due date; the response echoes the grouping in `grouped_by`. Team only: clients receive 403.",
+        "description": "That person's open to-dos, cards and card steps across the projects the caller can see (schedule events they are invited to are not assignments). `group_by=bucket` (default) sorts by project, `group_by=date` by due date; the response echoes the grouping in `grouped_by`. Team only: clients receive 403.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -12804,7 +14601,7 @@
           "Organizations"
         ],
         "summary": "Update the org settings",
-        "description": "Tool names, history retention, voice notes, and the five governance flags: admin and up. `require_two_factor` is owner-only. Members receive 403. Governance flags bite at the guarded writes, not here: restricted project or people edits, moves, archives, and trashes answer 403 for non-creator members; public-link creation answers 403 for non-admins; comment and chat edits answer 403 for everyone (and deletes for non-admins) after 15 minutes.",
+        "description": "Tool names, history retention, voice notes, the timesheet week start, and the five governance flags: admin and up. `require_two_factor` is owner-only. Members receive 403. Governance flags bite at the guarded writes, not here: restricted project or people edits, moves, archives, and trashes answer 403 for non-creator members; public-link creation answers 403 for non-admins; comment and chat edits answer 403 for everyone (and deletes for non-admins) after 15 minutes.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -12886,6 +14683,23 @@
                   },
                   "limit_comment_editing": {
                     "type": "boolean"
+                  },
+                  "timesheet_week_start": {
+                    "type": "string",
+                    "enum": [
+                      "sunday",
+                      "monday",
+                      "tuesday",
+                      "wednesday",
+                      "thursday",
+                      "friday",
+                      "saturday"
+                    ],
+                    "description": "Owners and admins: the day the weekly timesheet starts. Rows already added to a week show in the new week that holds their day"
+                  },
+                  "timesheet_approvals_enabled": {
+                    "type": "boolean",
+                    "description": "Owners and admins: turn timesheet approvals on or off. Off hides every week's status and keeps it; on shows them again"
                   }
                 }
               }
@@ -13353,6 +15167,602 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/timesheet-entries/{entryId}": {
+      "get": {
+        "operationId": "getTimesheetEntry",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Get a time entry",
+        "description": "An entry while it counts: its item in the trash, or its event on the account calendar, is a 404 until it's back. Time in a project reads for anyone on it, even after its Timesheet is switched off; absence reads only for its person, admins and owners. Clients receive 404.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateTimesheetEntry",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Update a time entry",
+        "description": "Send only what changes: the day, hours, notes or person; what the time is on never changes. Members change their own time; admins and owners anyone's. A move to another day or person checks the 24-hour cap on the new one; editing only the notes never does.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "hours": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "description": "`1.5` or `1:30`; more than zero"
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1000
+                  },
+                  "person_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "Validation (code `invalid`: hours not like 1.5 or 1:30, zero hours, a bad day, a repeating event without `occurrence`, a person who isn't a non-client member of the project; archived and trashed items take no new time) or the 24-hour daily cap (code `daily_cap`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTimesheetEntry",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Delete a time entry",
+        "description": "Permanent: an entry has no trash of its own (it goes there only with its item, and comes back with it). Members delete their own time; admins and owners anyone's.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "entryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/timesheet/absence-types": {
+      "get": {
+        "operationId": "listTimesheetAbsenceTypes",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "List absence types",
+        "description": "The org's kinds of time off, in order. Every org starts with Vacation, Sick leave, Bereavement and Statutory holiday.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "description": "`true` adds the removed ones"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The absence types",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TimesheetAbsenceType"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createTimesheetAbsenceType",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Add an absence type",
+        "description": "Owners and admins. It goes at the end of the list.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 60
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The absence type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetAbsenceType"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "An empty name, one over 60 characters, or one an active type already has (code `invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/timesheet/absence-types/{absenceTypeId}": {
+      "patch": {
+        "operationId": "updateTimesheetAbsenceType",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Rename, reorder, remove or restore an absence type",
+        "description": "Owners and admins. Removing (`archived: true`) keeps the hours already logged under its name; it takes no new time and leaves the weekly timesheet's Absence rows. Restoring (`archived: false`) puts it back at the end of the list.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "absenceTypeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "position": {
+                    "type": "number",
+                    "description": "Types sort by position; any number between two neighbors' puts it between them"
+                  },
+                  "archived": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The absence type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetAbsenceType"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "description": "An empty name, one over 60 characters, or one an active type already has (code `invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/timesheet/approvals": {
+      "get": {
+        "operationId": "getTimesheetApprovals",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "The approvals page for one week",
+        "description": "Owners and admins, while approvals are on: for the week holding `week`, a row per person with time or a submission (their hours in projects the caller can see, the status as read now, who submitted and decided it), the team's people with neither, and every submitted or changed week from any other period still waiting on a decision, oldest first.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "week",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Any day in the week; default today in the caller's zone"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The week's approvals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetApprovals"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Approvals are off (code `approvals_off`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/timesheet/approvals/{membershipId}/{weekStart}/approve": {
+      "post": {
+        "operationId": "approveTimesheetWeek",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Approve a submitted week",
+        "description": "Owners and admins, while approvals are on. Approves the week as its hours are now: a changed week's current hours become the approved ones. Approving your own week marks it `self_approved`. Approving an approved week changes nothing. Quiet: notifies no one.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "membershipId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Whose week"
+          },
+          {
+            "name": "weekStart",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "The submitted week's first day"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The week's approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetWeekApproval"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Approvals are off (code `approvals_off`), or the week was never submitted, or was rejected and waits for its person to resubmit it (code `week_state`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/timesheet/approvals/{membershipId}/{weekStart}/reject": {
+      "post": {
+        "operationId": "rejectTimesheetWeek",
+        "tags": [
+          "Timesheets"
+        ],
+        "summary": "Reject a week, with a reason",
+        "description": "Owners and admins, while approvals are on. Sends a submitted, changed or approved week back: it stays out of the report until it's resubmitted, and its person is notified with the reason, in the tray (action `timesheet_rejected`) and by email.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "membershipId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Whose week"
+          },
+          {
+            "name": "weekStart",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "The submitted week's first day"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Why, for the person: required, at most 1,000 characters once trimmed"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The week's approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimesheetWeekApproval"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Approvals are off (code `approvals_off`), or the week was never submitted or is already rejected (code `week_state`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No reason, or one over 1,000 characters (code `invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -14093,7 +16503,7 @@
           "Me"
         ],
         "summary": "Register this device for mobile push",
-        "description": "Upserts the device's Expo push token; the mobile app calls it on start and after login, refreshing `last_seen_at`. User-scoped like preferences: notifications follow the person across orgs. Registering a token claims it from any previous signer, so on a shared device the previous user's notifications stop arriving. Anything that is not a valid Expo push token is a 422. Dead tokens are pruned automatically when Expo reports DeviceNotRegistered.",
+        "description": "Upserts the device's push token; the app calls it on start and after login, refreshing `last_seen_at`. User-scoped like preferences: notifications follow the person across orgs. Registering a token claims it from any previous signer, so on a shared device the previous user's notifications stop arriving. A native registration (`kind: apns`) supersedes the same person's Expo devices on that platform, so a phone that updated from the 1.x app never receives the same push twice. `expo_push_token` is the deprecated 1.x field, equivalent to `{token, kind: \"expo\"}`. A token that does not match its kind (an Expo token must be `ExponentPushToken[…]`, an APNs token hex, on an iOS device) is a 422. Dead tokens are pruned automatically when the transport reports them (Expo DeviceNotRegistered, APNs 410 Unregistered or BadDeviceToken).",
         "requestBody": {
           "required": true,
           "content": {
@@ -14101,14 +16511,16 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "expo_push_token",
                   "platform"
                 ],
                 "properties": {
-                  "expo_push_token": {
+                  "token": {
                     "type": "string",
                     "maxLength": 4096,
-                    "description": "ExponentPushToken[…]"
+                    "description": "The transport's token: `ExponentPushToken[…]` for `expo`, the hex device token for `apns`. Required unless `expo_push_token` is sent."
+                  },
+                  "kind": {
+                    "$ref": "#/components/schemas/PushTokenKind"
                   },
                   "platform": {
                     "type": "string",
@@ -14123,6 +16535,12 @@
                       "null"
                     ],
                     "maxLength": 200
+                  },
+                  "expo_push_token": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "deprecated": true,
+                    "description": "Deprecated: the 1.x app's field, equivalent to `token` with `kind: \"expo\"`."
                   }
                 }
               }
@@ -14137,13 +16555,19 @@
                 "schema": {
                   "type": "object",
                   "required": [
-                    "expo_push_token",
+                    "token",
+                    "kind",
                     "platform",
-                    "last_seen_at"
+                    "device_name",
+                    "last_seen_at",
+                    "expo_push_token"
                   ],
                   "properties": {
-                    "expo_push_token": {
+                    "token": {
                       "type": "string"
+                    },
+                    "kind": {
+                      "$ref": "#/components/schemas/PushTokenKind"
                     },
                     "platform": {
                       "type": "string",
@@ -14161,6 +16585,14 @@
                     "last_seen_at": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "expo_push_token": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "deprecated": true,
+                      "description": "Deprecated alias of `token` for Expo devices; null for native tokens."
                     }
                   }
                 }
@@ -14183,7 +16615,7 @@
           "Me"
         ],
         "summary": "Unregister a push device",
-        "description": "Sign-out unregisters the device. Idempotent: an unknown or already-removed token is still a 204.",
+        "description": "Sign-out unregisters the device, whatever the token's kind. Idempotent: an unknown or already-removed token is still a 204.",
         "parameters": [
           {
             "name": "token",
@@ -14192,12 +16624,51 @@
             "schema": {
               "type": "string"
             },
-            "description": "The Expo push token, URL-encoded"
+            "description": "The device's push token as registered, URL-encoded"
           }
         ],
         "responses": {
           "204": {
             "description": "Unregistered"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          }
+        }
+      }
+    },
+    "/api/v1/me/push-devices/test": {
+      "post": {
+        "operationId": "sendTestPush",
+        "tags": [
+          "Me"
+        ],
+        "summary": "Send a test push to my devices",
+        "description": "Sends one push notification (\"Push notifications are working on this phone.\") to every device the caller has registered, through each device's own transport (Expo or APNs): the self-serve end-to-end check behind the app's Notifications settings. `sent: 0` means nothing is registered for this person yet. Dead tokens are pruned and Expo delivery receipts tracked exactly as for a normal fan-out.",
+        "responses": {
+          "200": {
+            "description": "How many devices were addressed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "sent",
+                    "devices"
+                  ],
+                  "properties": {
+                    "sent": {
+                      "type": "integer",
+                      "description": "Devices the push went out to"
+                    },
+                    "devices": {
+                      "type": "integer",
+                      "description": "Devices registered before dead tokens were pruned"
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
@@ -14568,6 +17039,11 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Personal access token from My settings → API tokens (`thicket_pat_…`). The token acts as its user: same organizations, project access, role, and row-level security as their sign-in. `read`-scope tokens may only GET/HEAD (writes → 403 `read_only_token`). Bearer requests must send a User-Agent naming the app and a contact (URL or email) or they receive 400 `user_agent_required`. The web app's own session cookie is also accepted on every route."
+      },
+      "sessionToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A Better Auth session token presented as a bearer, the native apps' credential. Sign-in responses (`/api/auth/sign-in/email`, `/api/auth/sign-in/social`) carry it in the `set-auth-token` header; send it back as `Authorization: Bearer <token>`. It is the same session a browser holds in its cookie and is treated exactly like one: full scope, no User-Agent requirement, no token rate limit. Told apart from a personal access token by the `thicket_pat_` prefix, which session tokens never carry."
       }
     },
     "schemas": {
@@ -14642,7 +17118,7 @@
       },
       "Recording": {
         "type": "object",
-        "description": "The uniform shape every recording serializes to; type-specific data rides in `meta`. List rows on children endpoints additionally carry creator_name, creator_image, comment_count, last_comment_at (and chat_message rows their cheers, client_approval rows their assignees).",
+        "description": "The uniform shape every recording serializes to; type-specific data rides in `meta`. List rows on children endpoints additionally carry creator_name, creator_image, comment_count, last_comment_at, plus per-type riders: chat_message rows their cheers; client_approval and card rows their assignees; card rows step_count/steps_done; column rows card_count; todolist rows todo_open_count/todo_done_count; upload rows byte_size/content_type.",
         "required": [
           "id",
           "type",
@@ -14727,6 +17203,22 @@
               "boolean",
               "null"
             ]
+          },
+          "series_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Calendar events split off a repeating event (a day changed on its own, a deleted day in the trash, a \"this and all future\" part): the repeating event. Null otherwise."
+          },
+          "occurrence_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "With `series_id`: the anchor-zone day key of the occurrence this event replaces (a \"this and all future\" part's first day)."
           },
           "completed": {
             "type": "boolean"
@@ -14963,6 +17455,10 @@
           "show_activity": {
             "type": "boolean"
           },
+          "timesheet_enabled": {
+            "type": "boolean",
+            "description": "GET and PATCH /projects/{projectId} only, and never for clients: the project's Timesheet switch (off by default)"
+          },
           "is_template": {
             "type": "boolean"
           },
@@ -15038,6 +17534,10 @@
             ],
             "format": "uuid",
             "description": "The tool's container recording; content is created under it"
+          },
+          "visible_to_clients": {
+            "type": "boolean",
+            "description": "The container's own client flag. Chat and Boards share as a whole (PUT /recordings/{container_id}/visibility cascades to every line, column and card); clients never receive an unshared Chat in their tool list and cannot open it"
           }
         }
       },
@@ -15279,7 +17779,10 @@
         }
       },
       "CalendarRecurrence": {
-        "type": "object",
+        "type": [
+          "object",
+          "null"
+        ],
         "description": "How a series repeats. `time_zone` anchors the series' wall clock across DST and fixes the calendar days `exdates`, `until`, and `occurrence_key` are read in.",
         "required": [
           "frequency"
@@ -15327,7 +17830,7 @@
               "format": "date"
             },
             "maxItems": 400,
-            "description": "Anchor-zone day keys of occurrences deleted via the trash prompt"
+            "description": "Anchor-zone day keys of occurrences that left the series: deleted (their events wait in the trash) or changed on their own. Accepted on create; on update the server keeps its own list"
           },
           "until": {
             "type": "string",
@@ -15460,6 +17963,17 @@
               "projectId": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "projectIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Selected project ids and/or \"account\""
+              },
+              "starredOnly": {
+                "type": "boolean",
+                "description": "The feed follows the member's starred projects"
               },
               "includeTasks": {
                 "type": "boolean"
@@ -15688,7 +18202,7 @@
           },
           "action": {
             "type": "string",
-            "description": "What happened: created, completed, moved, and the rest of the event vocabulary"
+            "description": "What happened: created, completed, moved, and the rest of the event vocabulary. Calendar: `rescheduled` (a new date, time, all-day state, or repeat rule), `occurrence_removed` (one day of a repeating event, or every day from one on, went to the trash) and `occurrence_restored` (it came back)"
           },
           "detail": {
             "type": [
@@ -16167,6 +18681,73 @@
           }
         }
       },
+      "PushTokenKind": {
+        "type": "string",
+        "enum": [
+          "expo",
+          "apns"
+        ],
+        "description": "The push token's transport: `expo` (the Expo push service, the 1.x app) or `apns` (Apple's service directly, the native iOS app). `fcm` joins with the Android app."
+      },
+      "MyNote": {
+        "description": "Your private scratchpad: a `personal_note` recording with no project, no parent and no title, one per person, created empty on first read. `meta` is always null here; the restore point's body stays server-side.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Recording"
+          },
+          {
+            "type": "object",
+            "required": [
+              "previous_version"
+            ],
+            "properties": {
+              "previous_version": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "The restore point: the pad as it stood when the current sitting began, moved forward by any save that discards most of the pad. Null until there is something to go back to.",
+                "required": [
+                  "saved_at"
+                ],
+                "properties": {
+                  "saved_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When the restorable version was last saved"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MyNoteSave": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 50000,
+            "description": "Plain text; converted to HTML"
+          },
+          "content_html": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 100000,
+            "description": "Rich HTML, sanitized; wins over content. Null, or an empty editor, clears the pad."
+          },
+          "base_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The `updated_at` this client last saw. When the pad has moved on since (another tab, the phone), the save answers 409 with the current pad under `error.note` instead of overwriting it."
+          }
+        }
+      },
       "AssignmentRow": {
         "allOf": [
           {
@@ -16512,6 +19093,22 @@
             ],
             "format": "uuid",
             "description": "Platform announcements (action announced): open GET /api/v1/{orgSlug}/bulletins/{bulletin_id}"
+          },
+          "timesheet_week_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "A rejected timesheet week (action timesheet_rejected, the reason in body): the week the row is about, instead of a recording"
+          },
+          "timesheet_week_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "That week's first day: open GET /api/v1/{orgSlug}/my/timesheet?week={timesheet_week_start}"
           },
           "actor_name": {
             "type": [
@@ -16960,6 +19557,10 @@
                 "format": "date"
               }
             }
+          },
+          "email_bouncing": {
+            "type": "boolean",
+            "description": "True while the email provider has stopped mailing this address after a hard bounce or a spam complaint. Thicket's notifications to this person are not being delivered until they change their address in My settings."
           },
           "created_at": {
             "type": "string",
@@ -17434,6 +20035,23 @@
           },
           "limit_comment_editing": {
             "type": "boolean"
+          },
+          "timesheet_week_start": {
+            "type": "string",
+            "enum": [
+              "sunday",
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "description": "The day the weekly timesheet starts (Admin › Timesheets; default monday). Absent for clients"
+          },
+          "timesheet_approvals_enabled": {
+            "type": "boolean",
+            "description": "Admin › Timesheets: people submit each week for approval, and a change made after that is flagged, never blocked (default false). Absent for clients"
           }
         }
       },
@@ -17935,6 +20553,31 @@
               "string",
               "null"
             ]
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Calendar events: when the trashed event starts. A deleted day of a repeating event is dated by that day, a deleted \"all future\" part by its first day"
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "all_day": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "recurring": {
+            "type": "boolean",
+            "description": "A repeating event, or a deleted \"all future\" part of one"
           }
         }
       },
@@ -18084,6 +20727,82 @@
               "null"
             ],
             "description": "Plain text pulled from the recording's content"
+          }
+        }
+      },
+      "ProjectAudience": {
+        "type": "object",
+        "description": "Who an item in a project reaches (`GET /projects/{projectId}/audience`).",
+        "required": [
+          "people",
+          "groups"
+        ],
+        "properties": {
+          "people": {
+            "type": "array",
+            "description": "Everyone the item reaches, by name.",
+            "items": {
+              "type": "object",
+              "required": [
+                "membership_id",
+                "name",
+                "image",
+                "role"
+              ],
+              "properties": {
+                "membership_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Same-origin path or external URL; null means render an initials disc"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "admin",
+                    "member",
+                    "client"
+                  ]
+                }
+              }
+            }
+          },
+          "groups": {
+            "type": "array",
+            "description": "The account's groups with at least one member the item reaches, each narrowed to those members. Picking a group assigns, invites or mentions exactly `member_ids`. Always empty for a client caller.",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "member_ids"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "member_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -18298,6 +21017,31 @@
               "string",
               "null"
             ]
+          },
+          "starts_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Calendar events: when the trashed event starts. A deleted day of a repeating event is dated by that day, a deleted \"all future\" part by its first day"
+          },
+          "ends_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "all_day": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "recurring": {
+            "type": "boolean",
+            "description": "A repeating event, or a deleted \"all future\" part of one"
           }
         }
       },
@@ -18334,7 +21078,10 @@
         }
       },
       "RecordingRecurrence": {
-        "type": "object",
+        "type": [
+          "object",
+          "null"
+        ],
         "description": "The repeat schedule for a recurring to-do series (stored as meta.recurrence, the calendar's Recurrence shape). Anchored on starts_on when the to-do spans days, else due_on.",
         "required": [
           "frequency"
@@ -18574,11 +21321,55 @@
                       "format": "uuid"
                     },
                     "name": {
-                      "type": "string"
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "image": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Same-origin avatar path, or null"
                     }
                   }
                 },
-                "description": "client_approval rows only"
+                "description": "client_approval and card rows only"
+              },
+              "step_count": {
+                "type": "integer",
+                "description": "card rows only: active steps under the card"
+              },
+              "steps_done": {
+                "type": "integer",
+                "description": "card rows only: completed steps"
+              },
+              "card_count": {
+                "type": "integer",
+                "description": "column rows only: active cards in the column (held cards included)"
+              },
+              "todo_open_count": {
+                "type": "integer",
+                "description": "todolist rows only: open to-dos in the list, its groups included"
+              },
+              "todo_done_count": {
+                "type": "integer",
+                "description": "todolist rows only: completed to-dos, groups included"
+              },
+              "byte_size": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "upload rows only: the current version's size"
+              },
+              "content_type": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "upload rows only: the current version's MIME type"
               }
             }
           }
@@ -19074,6 +21865,899 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TimesheetEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "date",
+          "hours",
+          "description",
+          "person",
+          "creator",
+          "project",
+          "parent",
+          "occurrence_date",
+          "absence_type",
+          "created_at",
+          "updated_at"
+        ],
+        "description": "Hours on a project, on one of its items, or as absence: a team-only recording. It counts while its item exists, goes to the trash and comes back with it, and moves with it. Clients never see one, and no generic `/recordings` route returns one.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "timesheet_entry"
+            ]
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "hours": {
+            "type": "string",
+            "description": "Decimal hours as a string: \"2.0\", \"1.5\", \"0.12\""
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "person": {
+            "$ref": "#/components/schemas/ProjectMember"
+          },
+          "creator": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "membership_id",
+              "name"
+            ],
+            "properties": {
+              "membership_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "description": "Who logged it"
+          },
+          "project": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "description": "Null for absence"
+          },
+          "parent": {
+            "$ref": "#/components/schemas/TimesheetEntryParent"
+          },
+          "occurrence_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "The day of a repeating event; null otherwise"
+          },
+          "absence_type": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TimesheetEntryParent": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "required": [
+          "id",
+          "type",
+          "title",
+          "app_url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "For a `timesheet` parent, the project's timesheet: `POST /recordings/{id}/timesheet/entries` there logs time on the project itself"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "timesheet",
+              "todo",
+              "message",
+              "document",
+              "upload",
+              "card",
+              "calendar_event"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "\"Timesheet\" for time on the project itself"
+          },
+          "app_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The item's page (a repeating event's carries `?occurrence=`), or the project's timesheet page"
+          }
+        },
+        "description": "What the time is on: the item, or the project's timesheet (`type: \"timesheet\"`) for time on the project itself; null for absence."
+      },
+      "TimesheetWeekRow": {
+        "type": "object",
+        "required": [
+          "recording_id",
+          "occurrence_date",
+          "project",
+          "item",
+          "added",
+          "can_log",
+          "can_edit",
+          "closed_reason"
+        ],
+        "description": "A row of the weekly timesheet. An entry is in the row whose `recording_id` and `occurrence_date` are its `parent.id` and `occurrence_date`; new time in the row goes to `POST /recordings/{recording_id}/timesheet/entries` with `occurrence` set to `occurrence_date`.",
+        "properties": {
+          "recording_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "What its time hangs under: the item, the recording holding a repeating event's day, or the project's timesheet (time on the project itself)"
+          },
+          "occurrence_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "An event's day; null otherwise"
+          },
+          "project": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "item": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "id",
+              "type",
+              "title",
+              "app_url"
+            ],
+            "description": "Null for time on the project itself",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "todo",
+                  "message",
+                  "document",
+                  "upload",
+                  "card",
+                  "calendar_event"
+                ]
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "app_url": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          },
+          "added": {
+            "type": "boolean",
+            "description": "Added to the week (it stays without hours); false when only its hours put it there"
+          },
+          "can_log": {
+            "type": "boolean",
+            "description": "New time can go in it"
+          },
+          "can_edit": {
+            "type": "boolean",
+            "description": "Its entries can change"
+          },
+          "closed_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it takes no new time, when it doesn't"
+          }
+        }
+      },
+      "TimesheetWeek": {
+        "type": "object",
+        "required": [
+          "person",
+          "week_start",
+          "week_end",
+          "week_starts_on",
+          "days",
+          "writable",
+          "approvals_enabled",
+          "status",
+          "approval",
+          "total_hours",
+          "rows",
+          "absence_types",
+          "projects",
+          "entries"
+        ],
+        "properties": {
+          "person": {
+            "$ref": "#/components/schemas/ProjectMember"
+          },
+          "week_start": {
+            "type": "string",
+            "format": "date"
+          },
+          "week_end": {
+            "type": "string",
+            "format": "date"
+          },
+          "week_starts_on": {
+            "type": "string",
+            "enum": [
+              "sunday",
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "description": "The org's timesheet week start (Admin › Timesheets)"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "minItems": 7,
+            "maxItems": 7
+          },
+          "writable": {
+            "type": "boolean",
+            "description": "The caller can change this week: their own, or an owner's or admin's view of someone still on the team"
+          },
+          "approvals_enabled": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "not_submitted",
+              "submitted",
+              "approved",
+              "changed",
+              "rejected",
+              null
+            ],
+            "description": "The week's approval status; null while approvals are off"
+          },
+          "approval": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "person",
+              "week_start",
+              "week_end",
+              "status",
+              "changed_since",
+              "submitted_at",
+              "submitted_by",
+              "decided_at",
+              "decided_by",
+              "self_approved",
+              "rejection_reason"
+            ],
+            "properties": {
+              "person": {
+                "$ref": "#/components/schemas/ProjectMember"
+              },
+              "week_start": {
+                "type": "string",
+                "format": "date"
+              },
+              "week_end": {
+                "type": "string",
+                "format": "date"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "not_submitted",
+                  "submitted",
+                  "approved",
+                  "changed",
+                  "rejected"
+                ],
+                "description": "As read now: `changed` once the week's hours no longer match what was submitted or approved (an edit, a new or deleted entry, a trashed or restored item, a move; never a notes-only edit), until it's resubmitted or approved again. A rejected week stays `rejected` until it's resubmitted"
+              },
+              "changed_since": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "submission",
+                  "approval",
+                  null
+                ],
+                "description": "A changed week: whether it changed since it was submitted or since it was approved"
+              },
+              "submitted_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "submitted_by": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "required": [
+                  "membership_id",
+                  "name"
+                ],
+                "properties": {
+                  "membership_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "image": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "description": "Who submitted it: the person, or an owner or admin for them"
+              },
+              "decided_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "When it was approved or rejected; null while it waits on a decision"
+              },
+              "decided_by": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "required": [
+                  "membership_id",
+                  "name"
+                ],
+                "properties": {
+                  "membership_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "image": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "description": "Who approved or rejected it"
+              },
+              "self_approved": {
+                "type": "boolean",
+                "description": "An owner or admin approved their own week"
+              },
+              "rejection_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "description": "Who submitted and decided the week, and when (the `TimesheetWeekApproval` shape); null while approvals are off"
+          },
+          "total_hours": {
+            "type": "string",
+            "description": "The week's total, decimal hours as a string"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimesheetWeekRow"
+            },
+            "description": "By project name, then time on the project, then items"
+          },
+          "absence_types": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "archived",
+                "can_log"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "archived": {
+                  "type": "boolean",
+                  "description": "Removed: here only while it has hours this week"
+                },
+                "can_log": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "What a new row can be in: active projects with their Timesheet on that the person is on. Empty when the week isn't writable"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimesheetEntry"
+            },
+            "description": "The person's counted entries dated in the week, newest day first"
+          }
+        }
+      },
+      "TimesheetAbsenceType": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "position",
+          "archived",
+          "archived_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TimesheetPickerItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "title",
+          "occurrence",
+          "day",
+          "app_url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "todo",
+              "message",
+              "document",
+              "upload",
+              "card",
+              "calendar_event"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurrence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "A repeating event's day: pass it as `occurrence` when adding the row"
+          },
+          "day": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "An event's day in the caller's zone; null for other items"
+          },
+          "app_url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "TimesheetWeekApproval": {
+        "type": "object",
+        "required": [
+          "person",
+          "week_start",
+          "week_end",
+          "status",
+          "changed_since",
+          "submitted_at",
+          "submitted_by",
+          "decided_at",
+          "decided_by",
+          "self_approved",
+          "rejection_reason"
+        ],
+        "properties": {
+          "person": {
+            "$ref": "#/components/schemas/ProjectMember"
+          },
+          "week_start": {
+            "type": "string",
+            "format": "date"
+          },
+          "week_end": {
+            "type": "string",
+            "format": "date"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_submitted",
+              "submitted",
+              "approved",
+              "changed",
+              "rejected"
+            ],
+            "description": "As read now: `changed` once the week's hours no longer match what was submitted or approved (an edit, a new or deleted entry, a trashed or restored item, a move; never a notes-only edit), until it's resubmitted or approved again. A rejected week stays `rejected` until it's resubmitted"
+          },
+          "changed_since": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "submission",
+              "approval",
+              null
+            ],
+            "description": "A changed week: whether it changed since it was submitted or since it was approved"
+          },
+          "submitted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "submitted_by": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "membership_id",
+              "name"
+            ],
+            "properties": {
+              "membership_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "description": "Who submitted it: the person, or an owner or admin for them"
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When it was approved or rejected; null while it waits on a decision"
+          },
+          "decided_by": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "membership_id",
+              "name"
+            ],
+            "properties": {
+              "membership_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "description": "Who approved or rejected it"
+          },
+          "self_approved": {
+            "type": "boolean",
+            "description": "An owner or admin approved their own week"
+          },
+          "rejection_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TimesheetApprovalRow": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimesheetWeekApproval"
+          },
+          {
+            "type": "object",
+            "required": [
+              "hours",
+              "removed"
+            ],
+            "properties": {
+              "hours": {
+                "type": "string",
+                "description": "The week's counted hours in projects the caller can see (absence included), decimal hours as a string"
+              },
+              "removed": {
+                "type": "boolean",
+                "description": "No longer on the team: their week still takes a decision"
+              }
+            }
+          }
+        ]
+      },
+      "TimesheetApprovals": {
+        "type": "object",
+        "required": [
+          "week_start",
+          "week_end",
+          "week_starts_on",
+          "weeks",
+          "without_time",
+          "waiting",
+          "counts",
+          "all_approved"
+        ],
+        "properties": {
+          "week_start": {
+            "type": "string",
+            "format": "date"
+          },
+          "week_end": {
+            "type": "string",
+            "format": "date"
+          },
+          "week_starts_on": {
+            "type": "string",
+            "enum": [
+              "sunday",
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "description": "The org's timesheet week start (Admin › Timesheets)"
+          },
+          "weeks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimesheetApprovalRow"
+            },
+            "description": "A row per person with time or a submission this week, by name"
+          },
+          "without_time": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectMember"
+            },
+            "description": "The team's current people with neither, by name"
+          },
+          "waiting": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimesheetApprovalRow"
+            },
+            "description": "Submitted or changed weeks from any other period, oldest first"
+          },
+          "counts": {
+            "type": "object",
+            "required": [
+              "not_submitted",
+              "submitted",
+              "approved",
+              "changed",
+              "rejected"
+            ],
+            "properties": {
+              "not_submitted": {
+                "type": "integer"
+              },
+              "submitted": {
+                "type": "integer"
+              },
+              "approved": {
+                "type": "integer"
+              },
+              "changed": {
+                "type": "integer"
+              },
+              "rejected": {
+                "type": "integer"
+              }
+            },
+            "description": "This week's rows by status"
+          },
+          "all_approved": {
+            "type": "boolean",
+            "description": "Everyone with time this week is approved and unchanged"
           }
         }
       }

@@ -126,6 +126,32 @@ export class ThicketClient {
     path: string,
     options: RequestOptions = {},
   ): Promise<T> {
+    const response = await this.send(method, path, options, "application/json");
+    if (response.status === 204) return undefined as T;
+    return (await response.json()) as T;
+  }
+
+  /**
+   * Like `request`, for the routes that answer with text rather than JSON
+   * (the timesheet CSV exports): the body as a string, with the same auth,
+   * retries and error taxonomy.
+   */
+  async requestText(
+    method: string,
+    path: string,
+    options: RequestOptions & { accept?: string } = {},
+  ): Promise<string> {
+    const { accept = "text/plain", ...rest } = options;
+    const response = await this.send(method, path, rest, accept);
+    return response.status === 204 ? "" : response.text();
+  }
+
+  private async send(
+    method: string,
+    path: string,
+    options: RequestOptions,
+    accept: string,
+  ): Promise<Response> {
     const url = new URL(this.baseUrl + path);
     for (const [key, value] of Object.entries(options.query ?? {})) {
       if (value !== undefined && value !== null) {
@@ -143,7 +169,7 @@ export class ThicketClient {
           headers: {
             authorization: `Bearer ${await this.token()}`,
             "user-agent": this.options.userAgent,
-            accept: "application/json",
+            accept,
             ...(options.body !== undefined
               ? { "content-type": "application/json" }
               : {}),
@@ -168,10 +194,7 @@ export class ThicketClient {
         continue;
       }
 
-      if (response.ok) {
-        if (response.status === 204) return undefined as T;
-        return (await response.json()) as T;
-      }
+      if (response.ok) return response;
 
       lastError = await this.toError(response);
       if (NEVER_RETRY.has(response.status) || !RETRYABLE_STATUSES.has(response.status)) {
