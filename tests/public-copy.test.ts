@@ -11,13 +11,23 @@ const COMPETITORS = new RegExp(
   "i",
 );
 
+// The repository is public and npm shows package.json's description and
+// keywords, so the scripts, the tests and the manifest are copy too.
 const files = import.meta.glob<string>(
-  ["../openapi.json", "../README.md", "../src/**/*"],
+  [
+    "../openapi.json",
+    "../README.md",
+    "../package.json",
+    "../src/**/*",
+    "../scripts/**/*",
+    "./**/*",
+    "!./public-copy.test.ts",
+  ],
   { query: "?raw", import: "default", eager: true },
 );
 
 describe("public copy names no competitor", () => {
-  it("spec, sources, and README", () => {
+  it("spec, sources, scripts, tests, manifest and README", () => {
     expect(Object.keys(files).length).toBeGreaterThan(3);
     const hits = Object.entries(files).flatMap(([path, text]) =>
       text
