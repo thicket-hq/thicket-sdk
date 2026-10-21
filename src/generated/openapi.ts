@@ -807,7 +807,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List recent people merges */
+        /**
+         * List recent people merges
+         * @description Owners and admins only; anyone else gets 403. Each merge keeps the merged-away person's address.
+         */
         get: operations["listMerges"];
         put?: never;
         /**
@@ -1461,7 +1464,7 @@ export interface paths {
         head?: never;
         /**
          * Change a person's role, title, or company
-         * @description Admins and up. Last-owner protections apply. `role: "client"` also strips group memberships and access to projects that don't work with clients.
+         * @description Admins and up. Last-owner protections apply. `role: "client"` also strips group memberships and access to projects that don't work with clients. `employee: false` makes an outside collaborator, who stops following all-access projects they aren't on.
          */
         patch: operations["updatePerson"];
         trace?: never;
@@ -1665,7 +1668,7 @@ export interface paths {
         put?: never;
         /**
          * Create a project
-         * @description Auto-starred for the creator. `all_access` defaults to false: a new project is invite-only until someone opens it to everyone. The plan's project cap applies; the seeded sample project never counts toward it.
+         * @description Auto-starred for the creator. `all_access` defaults to false: a new project is invite-only until someone opens it to everyone. The plan's project cap applies; the seeded sample project never counts toward it. A new project starts with a color: `color` when given, otherwise the preset the workspace's active projects use least.
          */
         post: operations["createProject"];
         delete?: never;
@@ -2311,7 +2314,7 @@ export interface paths {
         head?: never;
         /**
          * Edit a recording
-         * @description All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed. The Not Now and Done card-table columns keep their `title` and their description (`content`/`content_html`): editing either refuses (404).
+         * @description All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields, and `recurrence` set on an instance starts a separate series under a fresh `meta.recurrenceSeriesId` while the series it came from rolls on. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed. The Not Now and Done card-table columns keep their `title` and their description (`content`/`content_html`): editing either refuses (404).
          */
         patch: operations["updateRecording"];
         trace?: never;
@@ -3969,7 +3972,7 @@ export interface paths {
         put?: never;
         /**
          * Create an organization
-         * @description The caller becomes its owner. The slug is generated server-side ({slugified-name}-{6-char suffix}) and the org starts in the same server-decided state as web onboarding: a 30-day Pro trial with no card, plus the seeded Getting Started sample project. Deliberately takes no plan or billing parameter: plan selection is never a client concern.
+         * @description The caller becomes its owner. The slug is generated server-side ({slugified-name}-{key}, the key minted once and permanent) and the org starts in a server-decided state: the lasting Free tier plus the seeded Website Redesign sample project. Deliberately takes no plan or billing parameter: plan selection is never a client concern.
          */
         post: operations["createOrganization"];
         delete?: never;
@@ -4144,6 +4147,11 @@ export interface components {
             health_enabled?: boolean;
             is_template?: boolean;
             is_sample?: boolean;
+            /**
+             * Format: uuid
+             * @description The membership that made the project, or null once that membership no longer exists. The creator, admins and owners may change `all_access` and archive, trash or restore the project
+             */
+            creator_id?: string | null;
             /** @description Default listing only */
             starred?: boolean;
             /** @description ?scope=all (owner) only */
@@ -4183,6 +4191,8 @@ export interface components {
             id: string;
             name: string;
             slug: string;
+            /** @description The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths. */
+            key: string;
             /**
              * Format: uri
              * @description The organization's API base URL
@@ -4203,6 +4213,8 @@ export interface components {
                 membership_id: string;
                 /** @enum {string} */
                 role: "owner" | "admin" | "member" | "client";
+                /** @description False for an outside collaborator (role `member`) and for a client */
+                employee: boolean;
                 /**
                  * @description "agent" when this credential belongs to an AI agent membership
                  * @enum {string}
@@ -4611,7 +4623,7 @@ export interface components {
             /** Format: uuid */
             membership_id: string;
             name: string | null;
-            /** Format: email */
+            /** @description In full to owners and admins and to the person themselves; redacted for everyone else, agents included: the name's first character, then a dot for every other character of the name and every character of the domain but its periods ("j••••@•••••••••.•••"). */
             email: string | null;
             /** @enum {string} */
             role: "owner" | "admin" | "member" | "client";
@@ -4834,7 +4846,7 @@ export interface components {
         /** @description The user's personal preferences, one document across organizations. Field families: locale and display (timezone: a valid IANA zone, time_format 12h|24h, week_start sunday…saturday, theme light|dark|system, background_tint); notification routing (notify_scope everything|mentions, though direct actions like mentions, assignments, pings, and approvals always come through; email_notifications gates email copies; notifications_silenced is the in-app "Shhh" mute with the badge hidden; desktop_notifications; unread_badge for the "(N)" tab title); quiet hours (work_hours_enabled plus work_hours as per-day {start, end} HH:MM windows or null; catch_up_summary opts into one end-of-day summary of held email); email channels (notify_event_reminders, notify_assignment_reminders for due-soon reminders, weekly_assignments_email for the Monday summary, announcement_emails, onboarding_emails, notify_cheers, activity_digest); profile extras (out_of_office_start/out_of_office_end ISO dates, location, current_status); view choices (todos_view list|cards, docs_folders_open). GET returns every field; PATCH accepts any subset. */
         Preferences: Record<string, never>;
         /**
-         * @description Owner and admin administer the org; members are the team; clients see only client-visible recordings in clients-enabled projects they were added to.
+         * @description Owner and admin administer the org; members are the team (an outside collaborator is a member with `employee` false); clients see only client-visible recordings in clients-enabled projects they were added to.
          * @enum {string}
          */
         OrgRole: "owner" | "admin" | "member" | "client";
@@ -4843,7 +4855,11 @@ export interface components {
             id: string;
             name: string;
             slug: string;
+            /** @description The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths. */
+            key: string;
             role: components["schemas"]["OrgRole"];
+            /** @description Works at the organization. False for an outside collaborator, whose role is `member` but who reaches only the projects they are on and can't make projects, add people or be an admin, and false for a client. */
+            employee: boolean;
             /** @description Omitted when unset */
             logo?: string;
             /** @description The caller is this org's only active owner */
@@ -4873,11 +4889,13 @@ export interface components {
             /** Format: uuid */
             membership_id: string;
             name: string;
-            /** Format: email */
+            /** @description In full to owners and admins and to the person themselves; redacted for everyone else, agents included: the name's first character, then a dot for every other character of the name and every character of the domain but its periods ("j••••@•••••••••.•••"). */
             email: string;
             /** @description Same-origin avatar path or external SSO URL; null means render an initials disc */
             image?: string | null;
             role: components["schemas"]["OrgRole"];
+            /** @description Works at the organization. False for an outside collaborator, whose role is `member` but who reaches only the projects they are on and can't make projects, add people or be an admin, and false for a client. */
+            employee: boolean;
             /**
              * @description Historical agent identities remain distinguishable for attribution. New integrations use an existing person's OAuth connection.
              * @enum {string}
@@ -4914,6 +4932,8 @@ export interface components {
             email: string;
             name?: string | null;
             role: components["schemas"]["OrgRole"];
+            /** @description Works at the organization. False for an outside collaborator's invitation, whose role is `member` but who will reach only the projects they are given, and false for a client's. */
+            employee: boolean;
             /** Format: uuid */
             company_id?: string | null;
             /** @description Declined invites stay listed; a resend revives them */
@@ -4971,6 +4991,8 @@ export interface components {
             /** Format: email */
             email: string;
             role: components["schemas"]["OrgRole"];
+            /** @description False for an outside collaborator's invitation and a client's: an all-access project reaches neither, so no row is implicit */
+            employee: boolean;
             declined: boolean;
             /** @description Rows carry granted */
             projects: components["schemas"]["AccessProject"][];
@@ -5068,6 +5090,8 @@ export interface components {
             id: string;
             name: string;
             slug: string;
+            /** @description The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths. */
+            key: string;
             /** @description Omitted when unset */
             logo?: string;
             /** Format: date-time */
@@ -5301,11 +5325,14 @@ export interface components {
             /** Format: uuid */
             membership_id: string;
             name: string;
+            /** @description In full to owners and admins and to the person themselves; redacted for everyone else, agents included: the name's first character, then a dot for every other character of the name and every character of the domain but its periods ("j••••@•••••••••.•••"). */
             email?: string | null;
             /** @description Same-origin path or external URL; null means render an initials disc */
             image?: string | null;
             /** @enum {string} */
             role: "owner" | "admin" | "member" | "client";
+            /** @description False for an outside collaborator (role `member`) and for a client */
+            employee: boolean;
             title?: string | null;
             company_name?: string | null;
         };
@@ -5532,6 +5559,7 @@ export interface components {
             /** Format: uuid */
             membership_id: string;
             name: string | null;
+            /** @description In full to owners and admins and to the person themselves; redacted for everyone else, agents included: the name's first character, then a dot for every other character of the name and every character of the domain but its periods ("j••••@•••••••••.•••"). */
             email?: string | null;
         };
         /** @description What a bulk verb touched. */
@@ -6031,7 +6059,7 @@ export interface components {
         };
     };
     parameters: {
-        /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+        /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
         orgSlug: string;
         /** @description 1-based page number */
         page: number;
@@ -6054,7 +6082,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6079,7 +6107,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6107,7 +6135,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6146,7 +6174,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6178,7 +6206,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6207,7 +6235,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6242,7 +6270,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6266,7 +6294,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6313,7 +6341,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6456,7 +6484,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6521,7 +6549,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The id `POST /attachments` returned */
                 attachmentId: string;
@@ -6547,7 +6575,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The id `POST /attachments` returned */
                 attachmentId: string;
@@ -6586,7 +6614,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6611,7 +6639,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6657,7 +6685,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6719,7 +6747,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6762,7 +6790,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6789,7 +6817,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 bulletinId: string;
             };
@@ -6830,7 +6858,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6855,7 +6883,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -6920,7 +6948,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 eventId: string;
             };
@@ -6969,7 +6997,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 eventId: string;
             };
@@ -6998,7 +7026,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 eventId: string;
                 /** @description The occurrence's anchor-zone day key (YYYY-MM-DD) */
@@ -7037,7 +7065,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 eventId: string;
                 /** @description The occurrence's anchor-zone day key (YYYY-MM-DD) */
@@ -7088,7 +7116,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7112,7 +7140,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7164,7 +7192,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 feedId: string;
             };
@@ -7196,7 +7224,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7221,7 +7249,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7246,7 +7274,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7281,7 +7309,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 categoryId: string;
             };
@@ -7310,7 +7338,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 categoryId: string;
             };
@@ -7347,7 +7375,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7371,7 +7399,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7403,7 +7431,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 cheerId: string;
             };
@@ -7432,7 +7460,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7457,7 +7485,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7496,7 +7524,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 companyId: string;
             };
@@ -7525,7 +7553,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 companyId: string;
             };
@@ -7567,7 +7595,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7603,7 +7631,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 eventId: string;
             };
@@ -7629,7 +7657,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 eventId: string;
             };
@@ -7677,7 +7705,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7702,7 +7730,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7736,7 +7764,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 folderId: string;
             };
@@ -7765,7 +7793,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 folderId: string;
             };
@@ -7801,7 +7829,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7826,7 +7854,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7863,7 +7891,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 groupId: string;
             };
@@ -7892,7 +7920,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 groupId: string;
             };
@@ -7929,7 +7957,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -7955,7 +7983,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8100,7 +8128,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8127,7 +8155,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8153,7 +8181,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8188,7 +8216,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8212,7 +8240,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8247,7 +8275,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -8275,7 +8303,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -8316,7 +8344,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8340,7 +8368,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8375,7 +8403,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -8405,7 +8433,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8432,7 +8460,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8459,7 +8487,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8483,7 +8511,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8507,7 +8535,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8543,7 +8571,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8581,7 +8609,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8624,7 +8652,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8648,7 +8676,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8693,7 +8721,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8731,7 +8759,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8765,7 +8793,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8798,7 +8826,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 notificationId: string;
             };
@@ -8841,7 +8869,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8867,7 +8895,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8895,7 +8923,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -8936,7 +8964,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -8968,7 +8996,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -8995,7 +9023,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9053,7 +9081,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9129,7 +9157,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9169,7 +9197,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The week's first day, by the org's week start */
                 weekStart: string;
@@ -9225,7 +9253,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9251,7 +9279,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9284,7 +9312,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9309,7 +9337,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9320,6 +9348,8 @@ export interface operations {
                     /** Format: email */
                     email: string;
                     role: components["schemas"]["OrgRole"];
+                    /** @description false invites an outside collaborator: `role` must be `member` (422 otherwise). They reach only the projects they are given and can't make projects, add people or be an admin. */
+                    employee?: boolean;
                     /** Format: uuid */
                     company_id?: string;
                     name?: string;
@@ -9367,7 +9397,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9393,7 +9423,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9429,7 +9459,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9439,6 +9469,8 @@ export interface operations {
             content: {
                 "application/json": {
                     role?: components["schemas"]["OrgRole"];
+                    /** @description false makes the person an outside collaborator (role `member`; 422 with any other `role`); true, without `role`, makes them a member. A collaborator can't be made an admin or owner (403): make them a member first. */
+                    employee?: boolean;
                     /** Format: uuid */
                     company_id?: string | null;
                     title?: string | null;
@@ -9475,7 +9507,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9520,7 +9552,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9546,7 +9578,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9588,7 +9620,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9613,7 +9645,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9640,7 +9672,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -9674,7 +9706,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9700,7 +9732,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 invitationId: string;
             };
@@ -9725,7 +9757,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 invitationId: string;
             };
@@ -9752,7 +9784,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 invitationId: string;
             };
@@ -9786,7 +9818,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 invitationId: string;
             };
@@ -9826,7 +9858,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9852,7 +9884,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9885,7 +9917,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9918,7 +9950,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9944,7 +9976,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -9960,6 +9992,11 @@ export interface operations {
                      * @default false
                      */
                     all_access?: boolean;
+                    /**
+                     * @description The card color. Omitted, the project starts with the preset the workspace's active projects use least, ties in this list's order; null starts it with none.
+                     * @enum {string|null}
+                     */
+                    color?: "yellow" | "orange" | "coral" | "pink" | "purple" | "blue" | "green" | "tan" | "gray" | null;
                 };
             };
         };
@@ -9985,7 +10022,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10011,7 +10048,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10023,6 +10060,7 @@ export interface operations {
                     /** @description Refused with 422 (invalid) when it carries a link: a scheme such as https://, a www. address, or a domain followed by a path. A bare domain such as Linear.app is a name and is accepted. Resending the current name is always accepted, even one set before this rule. */
                     name?: string;
                     description?: string | null;
+                    /** @description Open to everyone (true) or invite-only. Only the project's creator (`creator_id`), admins and owners may change it, never an outside collaborator: anyone else gets 403 when it changes the project's value, since opening a project adds the whole team and closing one takes them off. Resending the current value is always accepted */
                     all_access?: boolean;
                     /** Format: uuid */
                     folder_id?: string | null;
@@ -10080,7 +10118,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10125,7 +10163,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10152,7 +10190,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10178,7 +10216,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10214,7 +10252,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10262,7 +10300,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10289,7 +10327,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10315,7 +10353,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10356,7 +10394,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
                 linkId: string;
@@ -10382,7 +10420,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
                 linkId: string;
@@ -10424,7 +10462,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
                 linkId: string;
@@ -10458,7 +10496,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
                 linkId: string;
@@ -10484,7 +10522,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10520,7 +10558,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10545,7 +10583,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10574,7 +10612,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10611,7 +10649,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10637,7 +10675,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10654,6 +10692,8 @@ export interface operations {
                         name?: string;
                         /** Format: email */
                         email_address: string;
+                        /** @description true invites a member. Otherwise someone new invited from a project joins as an outside collaborator: they reach only the projects they're given and can't make projects, add people or be an admin. */
+                        employee?: boolean;
                         title?: string;
                     }[];
                 };
@@ -10689,7 +10729,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10716,7 +10756,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10743,7 +10783,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10771,7 +10811,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10799,7 +10839,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
                 status: "active" | "archived" | "trashed";
@@ -10832,7 +10872,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10858,7 +10898,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10884,7 +10924,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10946,7 +10986,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10973,7 +11013,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -10999,7 +11039,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -11039,7 +11079,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
                 /** @description A tool name (its first instance) or an instance's `container_id` */
@@ -11078,7 +11118,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
                 /** @description The instance's `container_id` */
@@ -11106,7 +11146,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -11132,7 +11172,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -11160,7 +11200,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -11196,7 +11236,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 projectId: string;
             };
@@ -11221,7 +11261,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -11263,7 +11303,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -11291,7 +11331,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11320,7 +11360,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -11380,7 +11420,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -11412,7 +11452,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -11438,7 +11478,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11464,7 +11504,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11494,7 +11534,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11535,7 +11575,7 @@ export interface operations {
                     schedule?: components["schemas"]["QuestionSchedule"];
                     /** @description Questions only: replace who's asked (new askees get subscribed) */
                     membership_ids?: string[];
-                    /** @description To-dos only: set/replace the repeat schedule (merged into meta.recurrence); null stops the series */
+                    /** @description To-dos only: set/replace the repeat schedule (merged into meta.recurrence); null stops the series. On an instance it starts a separate series */
                     recurrence?: components["schemas"]["RecordingRecurrence"];
                 };
             };
@@ -11567,7 +11607,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The check-in question's id */
                 recordingId: string;
@@ -11598,7 +11638,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The check-in question's id */
                 recordingId: string;
@@ -11640,7 +11680,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The check-in question's id */
                 recordingId: string;
@@ -11677,7 +11717,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The client_approval recording's id */
                 recordingId: string;
@@ -11713,7 +11753,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The project's clients container id */
                 recordingId: string;
@@ -11757,7 +11797,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11783,7 +11823,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11820,7 +11860,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11863,7 +11903,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11889,7 +11929,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11946,7 +11986,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -11974,7 +12014,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12058,7 +12098,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12092,7 +12132,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12118,7 +12158,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12154,7 +12194,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12187,7 +12227,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12213,7 +12253,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12239,7 +12279,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12277,7 +12317,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12303,7 +12343,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12336,7 +12376,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12371,7 +12411,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12406,7 +12446,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12432,7 +12472,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12458,7 +12498,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12497,7 +12537,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The project's todos container id */
                 recordingId: string;
@@ -12558,7 +12598,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description A todolist id (move one dot) or the todos container id (bulk settings) */
                 recordingId: string;
@@ -12604,7 +12644,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The project's todos container id */
                 recordingId: string;
@@ -12653,7 +12693,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12679,7 +12719,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12707,7 +12747,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12733,7 +12773,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12759,7 +12799,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The project's check_ins container id */
                 recordingId: string;
@@ -12792,7 +12832,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The project's check_ins container id */
                 recordingId: string;
@@ -12831,7 +12871,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12857,7 +12897,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
                 status: "active" | "archived" | "trashed";
@@ -12886,7 +12926,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12912,7 +12952,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12948,7 +12988,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -12981,7 +13021,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13010,7 +13050,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13046,7 +13086,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13084,7 +13124,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13110,7 +13150,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13173,7 +13213,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description A chat or dm recording id */
                 recordingId: string;
@@ -13213,7 +13253,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The destination folder (or dm) recording id */
                 recordingId: string;
@@ -13261,7 +13301,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13287,7 +13327,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13321,7 +13361,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13349,7 +13389,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13378,7 +13418,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -13407,7 +13447,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13484,7 +13524,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13518,7 +13558,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13556,7 +13596,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13601,7 +13641,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13635,7 +13675,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13665,7 +13705,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 membershipId: string;
             };
@@ -13692,7 +13732,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13717,7 +13757,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13745,7 +13785,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13793,7 +13833,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 markerId: string;
             };
@@ -13842,7 +13882,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 markerId: string;
             };
@@ -13890,7 +13930,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13916,7 +13956,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13940,7 +13980,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -13965,7 +14005,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -14025,7 +14065,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -14074,7 +14114,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -14099,7 +14139,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -14142,7 +14182,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 templateId: string;
             };
@@ -14168,7 +14208,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 templateId: string;
             };
@@ -14192,7 +14232,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 templateId: string;
             };
@@ -14233,7 +14273,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 templateId: string;
             };
@@ -14274,7 +14314,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 entryId: string;
             };
@@ -14300,7 +14340,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 entryId: string;
             };
@@ -14330,7 +14370,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 entryId: string;
             };
@@ -14383,7 +14423,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -14408,7 +14448,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -14449,7 +14489,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 absenceTypeId: string;
             };
@@ -14497,7 +14537,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -14533,7 +14573,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description Whose week */
                 membershipId: string;
@@ -14573,7 +14613,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description Whose week */
                 membershipId: string;
@@ -14628,7 +14668,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
             };
             cookie?: never;
@@ -14654,7 +14694,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -14683,7 +14723,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 recordingId: string;
             };
@@ -14710,7 +14750,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The upload recording's id */
                 recordingId: string;
@@ -14736,7 +14776,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The upload recording's id */
                 recordingId: string;
@@ -14762,7 +14802,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The upload recording's id */
                 recordingId: string;
@@ -14796,7 +14836,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The upload recording's id */
                 recordingId: string;
@@ -14837,7 +14877,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs */
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
                 orgSlug: components["parameters"]["orgSlug"];
                 /** @description The upload recording's id */
                 recordingId: string;

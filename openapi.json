@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Thicket",
-    "version": "2026-10-19",
+    "version": "2026-10-21",
     "description": "Thicket's versioned REST API. The web app runs on the same routes, so everything the product does is here. Human-readable reference: https://www.thickethq.com/developers/api",
     "contact": {
       "name": "Thicket support",
@@ -3571,6 +3571,7 @@
           "Organizations"
         ],
         "summary": "List recent people merges",
+        "description": "Owners and admins only; anyone else gets 403. Each merge keeps the merged-away person's address.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -6032,6 +6033,10 @@
                   "role": {
                     "$ref": "#/components/schemas/OrgRole"
                   },
+                  "employee": {
+                    "type": "boolean",
+                    "description": "false invites an outside collaborator: `role` must be `member` (422 otherwise). They reach only the projects they are given and can't make projects, add people or be an admin."
+                  },
                   "company_id": {
                     "type": "string",
                     "format": "uuid"
@@ -6165,7 +6170,7 @@
           "People"
         ],
         "summary": "Change a person's role, title, or company",
-        "description": "Admins and up. Last-owner protections apply. `role: \"client\"` also strips group memberships and access to projects that don't work with clients.",
+        "description": "Admins and up. Last-owner protections apply. `role: \"client\"` also strips group memberships and access to projects that don't work with clients. `employee: false` makes an outside collaborator, who stops following all-access projects they aren't on.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -6189,6 +6194,10 @@
                 "properties": {
                   "role": {
                     "$ref": "#/components/schemas/OrgRole"
+                  },
+                  "employee": {
+                    "type": "boolean",
+                    "description": "false makes the person an outside collaborator (role `member`; 422 with any other `role`); true, without `role`, makes them a member. A collaborator can't be made an admin or owner (403): make them a member first."
                   },
                   "company_id": {
                     "type": [
@@ -7159,7 +7168,7 @@
           "Projects"
         ],
         "summary": "Create a project",
-        "description": "Auto-starred for the creator. `all_access` defaults to false: a new project is invite-only until someone opens it to everyone. The plan's project cap applies; the seeded sample project never counts toward it.",
+        "description": "Auto-starred for the creator. `all_access` defaults to false: a new project is invite-only until someone opens it to everyone. The plan's project cap applies; the seeded sample project never counts toward it. A new project starts with a color: `color` when given, otherwise the preset the workspace's active projects use least.",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -7189,6 +7198,25 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Defaults to false: invite-only until opened to everyone"
+                  },
+                  "color": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "yellow",
+                      "orange",
+                      "coral",
+                      "pink",
+                      "purple",
+                      "blue",
+                      "green",
+                      "tan",
+                      "gray",
+                      null
+                    ],
+                    "description": "The card color. Omitted, the project starts with the preset the workspace's active projects use least, ties in this list's order; null starts it with none."
                   }
                 }
               }
@@ -7307,7 +7335,8 @@
                     "maxLength": 2000
                   },
                   "all_access": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "description": "Open to everyone (true) or invite-only. Only the project's creator (`creator_id`), admins and owners may change it, never an outside collaborator: anyone else gets 403 when it changes the project's value, since opening a project adds the whole team and closing one takes them off. Resending the current value is always accepted"
                   },
                   "folder_id": {
                     "type": [
@@ -8604,6 +8633,10 @@
                         "email_address": {
                           "type": "string",
                           "format": "email"
+                        },
+                        "employee": {
+                          "type": "boolean",
+                          "description": "true invites a member. Otherwise someone new invited from a project joins as an outside collaborator: they reach only the projects they're given and can't make projects, add people or be an admin."
                         },
                         "title": {
                           "type": "string",
@@ -10170,7 +10203,7 @@
           "Recordings"
         ],
         "summary": "Edit a recording",
-        "description": "All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed. The Not Now and Done card-table columns keep their `title` and their description (`content`/`content_html`): editing either refuses (404).",
+        "description": "All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields, and `recurrence` set on an instance starts a separate series under a fresh `meta.recurrenceSeriesId` while the series it came from rolls on. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed. The Not Now and Done card-table columns keep their `title` and their description (`content`/`content_html`): editing either refuses (404).",
         "parameters": [
           {
             "$ref": "#/components/parameters/orgSlug"
@@ -10292,7 +10325,7 @@
                   },
                   "recurrence": {
                     "$ref": "#/components/schemas/RecordingRecurrence",
-                    "description": "To-dos only: set/replace the repeat schedule (merged into meta.recurrence); null stops the series"
+                    "description": "To-dos only: set/replace the repeat schedule (merged into meta.recurrence); null stops the series. On an instance it starts a separate series"
                   }
                 }
               }
@@ -17440,7 +17473,7 @@
           "Organizations"
         ],
         "summary": "Create an organization",
-        "description": "The caller becomes its owner. The slug is generated server-side ({slugified-name}-{6-char suffix}) and the org starts in the same server-decided state as web onboarding: a 30-day Pro trial with no card, plus the seeded Getting Started sample project. Deliberately takes no plan or billing parameter: plan selection is never a client concern.",
+        "description": "The caller becomes its owner. The slug is generated server-side ({slugified-name}-{key}, the key minted once and permanent) and the org starts in a server-decided state: the lasting Free tier plus the seeded Website Redesign sample project. Deliberately takes no plan or billing parameter: plan selection is never a client concern.",
         "requestBody": {
           "required": true,
           "content": {
@@ -18049,6 +18082,14 @@
           "is_sample": {
             "type": "boolean"
           },
+          "creator_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The membership that made the project, or null once that membership no longer exists. The creator, admins and owners may change `all_access` and archive, trash or restore the project"
+          },
           "starred": {
             "type": "boolean",
             "description": "Default listing only"
@@ -18156,7 +18197,8 @@
         "required": [
           "id",
           "name",
-          "slug"
+          "slug",
+          "key"
         ],
         "properties": {
           "id": {
@@ -18168,6 +18210,10 @@
           },
           "slug": {
             "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths."
           },
           "href": {
             "type": "string",
@@ -18210,6 +18256,7 @@
                   "required": [
                     "membership_id",
                     "role",
+                    "employee",
                     "membership_kind"
                   ],
                   "properties": {
@@ -18226,6 +18273,10 @@
                         "member",
                         "client"
                       ]
+                    },
+                    "employee": {
+                      "type": "boolean",
+                      "description": "False for an outside collaborator (role `member`) and for a client"
                     },
                     "membership_kind": {
                       "type": "string",
@@ -19506,7 +19557,7 @@
               "string",
               "null"
             ],
-            "format": "email"
+            "description": "In full to owners and admins and to the person themselves; redacted for everyone else, agents included: the name's first character, then a dot for every other character of the name and every character of the domain but its periods (\"j••••@•••••••••.•••\")."
           },
           "role": {
             "type": "string",
@@ -20236,7 +20287,7 @@
       },
       "OrgRole": {
         "type": "string",
-        "description": "Owner and admin administer the org; members are the team; clients see only client-visible recordings in clients-enabled projects they were added to.",
+        "description": "Owner and admin administer the org; members are the team (an outside collaborator is a member with `employee` false); clients see only client-visible recordings in clients-enabled projects they were added to.",
         "enum": [
           "owner",
           "admin",
@@ -20250,7 +20301,9 @@
           "id",
           "name",
           "slug",
+          "key",
           "role",
+          "employee",
           "sole_owner",
           "requires_two_factor_setup",
           "agent_management"
@@ -20266,8 +20319,16 @@
           "slug": {
             "type": "string"
           },
+          "key": {
+            "type": "string",
+            "description": "The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths."
+          },
           "role": {
             "$ref": "#/components/schemas/OrgRole"
+          },
+          "employee": {
+            "type": "boolean",
+            "description": "Works at the organization. False for an outside collaborator, whose role is `member` but who reaches only the projects they are on and can't make projects, add people or be an admin, and false for a client."
           },
           "logo": {
             "type": "string",
@@ -20340,6 +20401,7 @@
           "name",
           "email",
           "role",
+          "employee",
           "created_at"
         ],
         "properties": {
@@ -20352,7 +20414,7 @@
           },
           "email": {
             "type": "string",
-            "format": "email"
+            "description": "In full to owners and admins and to the person themselves; redacted for everyone else, agents included: the name's first character, then a dot for every other character of the name and every character of the domain but its periods (\"j••••@•••••••••.•••\")."
           },
           "image": {
             "type": [
@@ -20363,6 +20425,10 @@
           },
           "role": {
             "$ref": "#/components/schemas/OrgRole"
+          },
+          "employee": {
+            "type": "boolean",
+            "description": "Works at the organization. False for an outside collaborator, whose role is `member` but who reaches only the projects they are on and can't make projects, add people or be an admin, and false for a client."
           },
           "kind": {
             "type": "string",
@@ -20448,6 +20514,7 @@
           "id",
           "email",
           "role",
+          "employee",
           "declined",
           "created_at",
           "email_status",
@@ -20470,6 +20537,10 @@
           },
           "role": {
             "$ref": "#/components/schemas/OrgRole"
+          },
+          "employee": {
+            "type": "boolean",
+            "description": "Works at the organization. False for an outside collaborator's invitation, whose role is `member` but who will reach only the projects they are given, and false for a client's."
           },
           "company_id": {
             "type": [
@@ -20606,6 +20677,7 @@
           "invitation_id",
           "email",
           "role",
+          "employee",
           "declined",
           "projects"
         ],
@@ -20620,6 +20692,10 @@
           },
           "role": {
             "$ref": "#/components/schemas/OrgRole"
+          },
+          "employee": {
+            "type": "boolean",
+            "description": "False for an outside collaborator's invitation and a client's: an all-access project reaches neither, so no row is implicit"
           },
           "declined": {
             "type": "boolean"
@@ -20937,6 +21013,7 @@
           "id",
           "name",
           "slug",
+          "key",
           "created_at",
           "updated_at",
           "owner_names",
@@ -20954,6 +21031,10 @@
           },
           "slug": {
             "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths."
           },
           "logo": {
             "type": "string",
@@ -21756,7 +21837,8 @@
         "required": [
           "membership_id",
           "name",
-          "role"
+          "role",
+          "employee"
         ],
         "properties": {
           "membership_id": {
@@ -21770,7 +21852,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "In full to owners and admins and to the person themselves; redacted for everyone else, agents included: the name's first character, then a dot for every other character of the name and every character of the domain but its periods (\"j••••@•••••••••.•••\")."
           },
           "image": {
             "type": [
@@ -21787,6 +21870,10 @@
               "member",
               "client"
             ]
+          },
+          "employee": {
+            "type": "boolean",
+            "description": "False for an outside collaborator (role `member`) and for a client"
           },
           "title": {
             "type": [
@@ -22593,7 +22680,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "In full to owners and admins and to the person themselves; redacted for everyone else, agents included: the name's first character, then a dot for every other character of the name and every character of the domain but its periods (\"j••••@•••••••••.•••\")."
           }
         }
       },
@@ -23949,7 +24037,7 @@
         "schema": {
           "type": "string"
         },
-        "description": "The organization's URL slug; list yours via GET /api/v1/authorization or /api/v1/orgs"
+        "description": "The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working."
       },
       "page": {
         "name": "page",
