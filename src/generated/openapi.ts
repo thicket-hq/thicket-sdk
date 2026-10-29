@@ -27,7 +27,7 @@ export interface paths {
         head?: never;
         /**
          * Rename the account
-         * @description Owner only.
+         * @description Owner only. A new name gives the account a new address: its slug is rebuilt as `{slugified-name}-{key}` around its permanent `key`, and the answer carries it. Every earlier address keeps resolving in the `{orgSlug}` segment (by the key, and a pre-July workspace's pre-rename slug by `legacy_slug`, which its first rename sets), and the API never redirects, so a path built from an old slug keeps working. A client holding the workspace by `id` or `key` sees no change; one holding it by slug refreshes its organization list.
          */
         patch: operations["renameAccount"];
         trace?: never;
@@ -633,7 +633,7 @@ export interface paths {
         };
         /**
          * List companies
-         * @description Companies with counts of active memberships. Removed memberships are excluded.
+         * @description Companies with counts of active memberships, the account's primary company first (`is_primary`), then by name. Removed memberships are excluded.
          */
         get: operations["listCompanies"];
         put?: never;
@@ -657,14 +657,14 @@ export interface paths {
         post?: never;
         /**
          * Delete a company
-         * @description People keep their membership; they just lose the company association.
+         * @description People keep their membership; they just lose the company association. The account's primary company can't be deleted (403 `primary_company`).
          */
         delete: operations["deleteCompany"];
         options?: never;
         head?: never;
         /**
          * Update a company
-         * @description Rename, toggle client status, or toggle `dms_disabled` (the per-company private-chat restriction: members drop from chat pickers, can't start DMs, and existing conversations freeze read-only both ways).
+         * @description Rename, toggle client status, or toggle `dms_disabled` (the per-company private-chat restriction: members drop from chat pickers, can't start DMs, and existing conversations freeze read-only both ways). The account's primary company is renamed here, apart from the account's own name, and can't be made a client company (403 `primary_company`).
          */
         patch: operations["updateCompany"];
         trace?: never;
@@ -683,6 +683,26 @@ export interface paths {
          * @description Server-generated embed markup for the allowlist: YouTube, Vimeo, Loom, Spotify, X, Flickr, Imgur, SoundCloud, and direct `.gif` URLs. Non-allowlisted URLs return `{html: null}`: keep a plain link. Client-supplied iframe HTML is never accepted anywhere; the returned markup also round-trips the rich-text sanitizer.
          */
         post: operations["createEmbed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The account-wide event feed, resumable
+         * @description Every event across the projects you can see, oldest first in strict (created_at, id) order, so a poller that keeps the `position` each page answers never misses a row and never sees one twice: pass it back as `cursor` to read on from there. `since` starts a fresh read at an instant; `project_id` narrows to one project (and is how the sample project is read). Up to 100 a page; `has_more` says whether a page is full. Rows carry `performed_by` (the actor's membership id), `actor_kind` and `authored_via` (the machine channel that wrote what the event is about, or null for a person's own work). Same visibility rules as the activity timelines: trashed content and what a client cannot see stay out, chat and direct-message lines are never logged.
+         */
+        get: operations["pollEvents"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1160,6 +1180,26 @@ export interface paths {
         patch: operations["stopMyGettingStarted"];
         trace?: never;
     };
+    "/api/v1/{orgSlug}/my/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your live channel (Server-Sent Events)
+         * @description A `text/event-stream` that says, with ids only, when a line in the chat named by `chat` was posted, edited or deleted (`event: chat`, `data: {chat, line, action}`; a cheer on a line counts as `updated`) and when a notification row landed for you (`event: notification`, `data: {id}`). Fetch what changed through the ordinary reads: `GET /recordings/{chat}/children?type=chat_message` after your newest line, `GET /my/notifications`. Opens with `event: ready` carrying the server's build id, `transport` (`listen`, or `unavailable` when the server cannot push, in which case keep polling) and the chat it reports; sends `: ping` every 15 seconds; `event: resync` means events may have been missed, so catch up; `event: reconnect` ends the stream after ten minutes or when the server restarts, so open it again; `event: refused` (`data: {code, message, retryable}`) means you may no longer listen. `chat` must be a chat room or private chat you can read; without it the stream carries notifications alone. At most 6 open streams per person.
+         */
+        get: operations["streamLive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/my/note": {
         parameters: {
             query?: never;
@@ -1464,7 +1504,7 @@ export interface paths {
         head?: never;
         /**
          * Change a person's role, title, or company
-         * @description Admins and up. Last-owner protections apply. `role: "client"` also strips group memberships and access to projects that don't work with clients. `employee: false` makes an outside collaborator, who stops following all-access projects they aren't on.
+         * @description Admins and up. Last-owner protections apply. `role: "client"` also strips group memberships and access to projects that don't work with clients. `employee: false` makes an outside collaborator, who stops following all-access projects they aren't on. A person's company follows their type: becoming an owner, admin or member puts them in the account's primary company, and becoming an outside collaborator or a client takes them out of it, to no company. `company_id` can't move an owner, admin or member out of the primary company (403 `coworker_company`) or put anyone else in it (403 `primary_company`).
          */
         patch: operations["updatePerson"];
         trace?: never;
@@ -1696,7 +1736,7 @@ export interface paths {
         head?: never;
         /**
          * Update a project
-         * @description `color` is a preset card color; anything outside the enum is a 400. `starts_on` and `ends_on` travel together: set both or null both, and `ends_on` must not precede `starts_on` (violations are a 400). `show_activity` toggles the project's activity rollups. `clients_enabled: false` reverts every recording in the project to team-only and drops client access (Work with clients); `client_company_name` is the label shown on the project. Move the project in or out of a home-screen folder with `folder_id` (or null). `timesheet_enabled` switches the project's Timesheet (a project-details edit: never clients, and "Restrict who can edit project details" applies); the response then carries it. `wallpaper_mode` is how the project's wallpaper paints (`fill` or `tile`); the image itself is PUT/DELETE /projects/{projectId}/wallpaper.
+         * @description `color` is a preset card color; anything outside the enum is a 400. `starts_on` and `ends_on` travel together: set both or null both, and `ends_on` must not precede `starts_on` (violations are a 400). `show_activity` toggles the project's activity rollups. `clients_enabled: false` reverts every recording in the project to team-only and clears the client company (Work with clients); it waits for the clients to go: while a client is on the project's roster it is a 403 `clients_on_project` and nothing changes, so remove each client first (PUT /projects/{projectId}/people with `revoke`). `client_company_name` is the label shown on the project. Move the project in or out of a home-screen folder with `folder_id` (or null). `timesheet_enabled` switches the project's Timesheet (a project-details edit: never clients, and "Restrict who can edit project details" applies); the response then carries it. `wallpaper_mode` is how the project's wallpaper paints (`fill` or `tile`); the image itself is PUT/DELETE /projects/{projectId}/wallpaper.
          */
         patch: operations["updateProject"];
         trace?: never;
@@ -1710,7 +1750,7 @@ export interface paths {
         };
         /**
          * Who an item in the project reaches
-         * @description The people and groups an item in this project reaches: everyone on the project's roster, every teammate when the project is open to everyone in the account, and clients only when the item is visible to clients. Removed people never appear, and a client caller sees only the people clients can see. This is the list the @-mention, assignee, subscriber and invitee pickers offer. `PUT /recordings/{id}/assignees` refuses (403) and `PUT /recordings/{id}/subscribers` skips anyone outside it, and a mention of anyone outside it is never delivered, so build pickers on this rather than on `GET /projects/{projectId}/people`. Pass the item's `visible_to_clients`, or for a new item the visibility it will have.
+         * @description The people and groups an item in this project reaches: everyone on the project's roster, every teammate when the project is open to everyone in the account, and clients only when the item is visible to clients. Removed people never appear, and a client caller sees only the people clients can see. This is the list the @-mention, assignee, subscriber and invitee pickers offer. `PUT /recordings/{id}/assignees` refuses (403) and `PUT /recordings/{id}/subscribers` skips anyone outside it, and a mention of anyone outside it is never delivered, so build pickers on this rather than on `GET /projects/{projectId}/people`. Pass the item's `visible_to_clients`, or for a new item the visibility it will have. Groups carry the members the item reaches; a client caller gets only the groups whose every member already reaches it.
          */
         get: operations["getProjectAudience"];
         put?: never;
@@ -1910,12 +1950,12 @@ export interface paths {
         };
         /**
          * Get the project bell
-         * @description Your per-project notification preference. Resolution order: thread subscription, then project, then account default.
+         * @description Your project bell: whether new things posted to this project include you ("everything", where every project starts; null when never set reads the same) or only @mentions and threads you follow ("mentions"). It decides who a post's notify "asked" choice reaches. A thread you follow notifies you either way; your account notify_scope decides what is emailed or pushed.
          */
         get: operations["getProjectNotificationPref"];
         /**
          * Set the project bell
-         * @description Notify about everything vs only when mentioned; null reverts to the account default.
+         * @description Notify about everything vs only when mentioned; null clears the choice, which reads as everything.
          */
         put: operations["setProjectNotificationPref"];
         post?: never;
@@ -1955,13 +1995,13 @@ export interface paths {
         };
         /**
          * What Share everything would share
-         * @description Counts what `POST` would share with the project's client right now, by kind: anchors (messages, to-do lists, docs, files, links and folders at the top of Docs & Files, events, check-in questions, updates), the whole-tool `tools` still team-only, and `within`, everything that comes along inside them (to-dos, cards, comments…). Timesheets, loose to-dos, drafts and the trash never count. The team's.
+         * @description Counts what `POST` would share with the project's client right now, by kind: anchors (messages, to-do lists, docs, files, links and folders at the top of Docs & Files, events, check-in questions, health updates), the whole-tool `tools` still team-only, and `within`, everything that comes along inside them (to-dos, cards, comments…). Timesheets, loose to-dos, progress updates, drafts and the trash never count. The team's.
          */
         get: operations["previewShareEverything"];
         put?: never;
         /**
          * Share everything with the client
-         * @description Shares everything in the project with its client in one step (the Clients tab's "Share everything…", after its confirmation) and answers with what it shared. Timesheets, loose to-dos, drafts and the trash stay the team's. The project's clients follow every newly shared thread, and each anchor's change log records the share. 403 for a client caller or a project that doesn't work with clients.
+         * @description Shares everything in the project with its client in one step (the Clients tab's "Share everything…", after its confirmation) and answers with what it shared. Timesheets, loose to-dos, progress updates, drafts and the trash stay the team's. The project's clients follow every newly shared thread, and each anchor's change log records the share. 403 for a client caller or a project that doesn't work with clients.
          */
         post: operations["shareEverything"];
         delete?: never;
@@ -2480,7 +2520,7 @@ export interface paths {
         put?: never;
         /**
          * Create content under a container
-         * @description Creates any content type under its container; parent rules are validated server-side (message under message_board, todolist under todos or todolist as a group, todo under todolist/todos/todo as a subtask, document/upload/linked_file/folder under folder, calendar_event under calendar, column under board, card under column, step under card, chat_message under chat or dm, question under check_ins, answer under question). `url` is required for linked_file (stored on meta.url). `notify` applies to messages, documents, and linked files: "everyone" (default), "none", or membership ids; the resolved set is notified when the item posts and becomes its exact subscriber set ("none" subscribes nobody, not even the author), honored when a draft or scheduled post publishes; picked people outside the project audience are dropped. `completion_subscriber_ids` are subscribed at creation and notified on completion. `recurrence` needs a dated to-do (422 otherwise) and makes it a recurring series' primary. `status: "drafted"` keeps it private to you until published; add `scheduled_at` to publish automatically. Clients can't add loose to-dos (403).
+         * @description Creates any content type under its container; parent rules are validated server-side (message under message_board, todolist under todos or todolist as a group, todo under todolist/todos/todo as a subtask, document/upload/linked_file/folder under folder, calendar_event under calendar, column under board, card under column, step under card, chat_message under chat or dm, question under check_ins, answer under question). `url` is required for linked_file (stored on meta.url). `notify` applies to messages, documents, and linked files: "everyone" (default), "asked" (the people who asked to be notified about this project: their project bell, else their account notify scope, is everything; the web composer's default), "none", or membership ids, who are told whatever their bell says; the resolved set is notified when the item posts and, with the author, becomes its subscriber set ("none" subscribes nobody, not even the author), honored when a draft or scheduled post publishes; picked people outside the project audience are dropped. `completion_subscriber_ids` are subscribed at creation and notified on completion. `recurrence` needs a dated to-do (422 otherwise) and makes it a recurring series' primary. `status: "drafted"` keeps it private to you until published; add `scheduled_at` to publish automatically. A client posts anywhere it can see: messages, to-do lists and groups, to-dos in a list, documents, folders, linked files, events, chat lines, questions and answers, each visible to clients whatever `visible_to_clients` says. Clients can't add loose to-dos, columns, cards, steps or correspondence, draft, or set a `meta.color` (403).
          */
         post: operations["createChild"];
         delete?: never;
@@ -2667,7 +2707,7 @@ export interface paths {
         get?: never;
         /**
          * Pause or resume a check-in question
-         * @description Stop/resume asking a check-in question; the ask sweep skips paused questions. The recording must be a question (404 otherwise).
+         * @description Stop/resume asking a check-in question; the ask sweep skips paused questions. The recording must be a question (404 otherwise). Pausing is an edit: a client pauses only a question they asked, and an archived project's questions are read-only (403); an archived or trashed question is 404.
          */
         put: operations["pauseQuestion"];
         post?: never;
@@ -2730,7 +2770,7 @@ export interface paths {
         };
         /**
          * Get the progress chart
-         * @description The todos container's progress chart. Charts track to-do lists, not items: each tracked list is a dot positioned 0 to 1 along the arc (left = working it out, right = getting it done) with a stable `color`. Returns the `enabled` flag, the dots (`lists`), saved `updates` newest first (each with its snapshot `positions`), and the legacy move `history`.
+         * @description The todos container's progress chart. Charts track to-do lists, not items: each tracked list is a dot positioned 0 to 1 along the arc (left = working it out, right = getting it done) with a stable `color`. Returns the `enabled` flag, the dots (`lists`), saved `updates` newest first (each with its snapshot `positions`), and the legacy move `history`. The chart is the team's: a client is answered 403.
          */
         get: operations["getProgressChart"];
         /**
@@ -2756,7 +2796,7 @@ export interface paths {
         put?: never;
         /**
          * Save a progress update
-         * @description Save this update: apply the moved dots, then snapshot the whole chart into a `progress_update` recording (commentable and cheerable). `notify` is the exact subscriber set, M5 semantics: everyone, none, or a membership id list. Trashing an update (PUT /recordings/{id}/status/trashed) rolls its moves back; dot positions derive from the chain of active updates.
+         * @description Save this update: apply the moved dots, then snapshot the whole chart into a `progress_update` recording (commentable and cheerable). `notify` is the exact subscriber set, M5 semantics: everyone, none, or a membership id list. Trashing an update (PUT /recordings/{id}/status/trashed) rolls its moves back; dot positions derive from the chain of active updates. An update is always the team's: it is never visible to clients, and a `visible_to_clients` sent with it is ignored.
          */
         post: operations["createProgressUpdate"];
         delete?: never;
@@ -2828,7 +2868,7 @@ export interface paths {
         put?: never;
         /**
          * Create a check-in question
-         * @description Askees (`membership_ids`) are auto-subscribed to answers and notified per occurrence. Schedule semantics: daily takes `days` (0=Sunday to 6=Saturday, default Monday to Friday, weekends allowed); weekly and every_other_week take `day_of_week` (the alternation anchors at creation); monthly means the first `day_of_week` of the month, or a fixed `day_of_month`. Clients can't create check-ins (403). Every askee must be on the project (a teammate on a project open to everyone counts), and a client only when the question is visible to clients; anyone else is 403, on create and when `membership_ids` adds people. Question edits go through the generic PATCH /recordings/{id}: `title`, plus question-only `schedule` and `membership_ids`.
+         * @description Askees (`membership_ids`) are auto-subscribed to answers and notified per occurrence. Schedule semantics: daily takes `days` (0=Sunday to 6=Saturday, default Monday to Friday, weekends allowed); weekly and every_other_week take `day_of_week` (the alternation anchors at creation); monthly means the first `day_of_week` of the month, or a fixed `day_of_month`. A client may ask a question too: theirs is always visible to clients, and only they (as its author) may edit it. Every askee must be on the project (a teammate on a project open to everyone counts), and a client only when the question is visible to clients; anyone else is 403, on create and when `membership_ids` adds people. Question edits go through the generic PATCH /recordings/{id}: `title`, plus question-only `schedule` and `membership_ids`.
          */
         post: operations["createQuestion"];
         delete?: never;
@@ -2995,7 +3035,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a file
-         * @description Multipart upload into a project folder (or a dm, for files posted into a conversation). `file` is required and capped at 50 MB. `notify` follows the M5 semantics: "everyone", "none", or a JSON array of membership ids; omitted means silent. `visible_to_clients` is the upload card's "Who should see this?" for a file posted at the top of Docs & Files. Returns 402 when the plan's storage cap is reached. Rename later via PATCH /recordings/{id} with `base_name` (the extension is kept).
+         * @description Multipart upload into a project folder (or a dm, for files posted into a conversation). `file` is required and capped at 50 MB. `notify` follows the M5 semantics: "everyone", "asked" (the people whose project bell is on), "none", or a JSON array of membership ids, told whatever their bell says; omitted means silent. `visible_to_clients` is the upload card's "Who should see this?" for a file posted at the top of Docs & Files. Returns 402 when the plan's storage cap is reached. Rename later via PATCH /recordings/{id} with `base_name` (the extension is kept).
          */
         post: operations["createUpload"];
         delete?: never;
@@ -3658,7 +3698,7 @@ export interface paths {
         put?: never;
         /**
          * Replace the file with a new version
-         * @description Multipart body with `file` (up to 50 MB). Same recording keeps its URL, comments, and subscribers; the outgoing version moves to the kept list and the title and size flip to the new file. `notify` picks who hears about the new version; omitted defaults to the project audience. Returns 402 when the plan's storage cap is reached.
+         * @description Multipart body with `file` (up to 50 MB). Same recording keeps its URL, comments, and subscribers; the outgoing version moves to the kept list and the title and size flip to the new file. `notify` picks who hears about the new version; omitted, the choice the file was posted with applies (everyone when it was posted without one). Returns 402 when the plan's storage cap is reached.
          */
         post: operations["replaceUploadVersion"];
         delete?: never;
@@ -3884,7 +3924,7 @@ export interface paths {
         put?: never;
         /**
          * Send a test push to my devices
-         * @description Sends one push notification ("Push notifications are working on this phone.") to every device the caller has registered, through each device's own transport (Expo or APNs): the self-serve end-to-end check behind the app's Notifications settings. `sent: 0` means nothing is registered for this person yet. Dead tokens are pruned and Expo delivery receipts tracked exactly as for a normal fan-out.
+         * @description Sends one push notification ("Push notifications are working on this phone.") to every device the caller has registered, through the transport each device's `kind` names (`apns`, Apple's service directly, for the iOS app): the self-serve end-to-end check behind the app's Notifications settings. `sent: 0` means nothing is registered for this person yet. Tokens the transport has rejected for good are pruned exactly as for a normal fan-out.
          */
         post: operations["sendTestPush"];
         delete?: never;
@@ -4092,6 +4132,8 @@ export interface components {
             meta?: {
                 [key: string]: unknown;
             } | null;
+            /** @description "mcp" or "api" when the recording was written through a connected app or token (the byline's "via" mark); null for a person's own work in Thicket */
+            authored_via?: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -4193,6 +4235,8 @@ export interface components {
             slug: string;
             /** @description The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths. */
             key: string;
+            /** @description The slug a pre-July workspace had before its first rename, which never carried the key; null until then, and for every workspace whose slugs all carry the key. The `{orgSlug}` path segment resolves it after the current slug and the key, so a client resolving an address inside its own organization list matches it last, as the server does, and a link or push issued under that address still names the workspace. */
+            legacy_slug: string | null;
             /**
              * Format: uri
              * @description The organization's API base URL
@@ -4564,6 +4608,10 @@ export interface components {
             recording_title?: string | null;
             /** @description Plain-text excerpt of the content involved */
             excerpt?: string | null;
+            /** @description "person" or "agent", the actor's membership kind */
+            actor_kind?: string | null;
+            /** @description "mcp" or "api" when what the event is about was written through a connected app or token; null for a person's own work in Thicket */
+            authored_via?: string | null;
         };
         /** @description A dated row of the upcoming report; assignable rows extend it. */
         UpcomingReportEvent: {
@@ -4660,6 +4708,43 @@ export interface components {
             over_a_week_late: components["schemas"]["OverdueReportItem"][];
             over_a_month_late: components["schemas"]["OverdueReportItem"][];
             over_three_months_late: components["schemas"]["OverdueReportItem"][];
+        };
+        /** @description One row of the resumable account feed: an ActivityEvent with `performed_by` in place of `actor_id`, plus the recording's parent */
+        FeedEvent: {
+            /** Format: uuid */
+            id: string;
+            /** @description What happened: created, completed, moved, and the rest of the event vocabulary. Calendar: `rescheduled` (a new date, time, all-day state, or repeat rule), `occurrence_removed` (one day of a repeating event, or every day from one on, went to the trash) and `occurrence_restored` (it came back) */
+            action: string;
+            /** @description The action's particulars as stored, e.g. `{name}` on a project rename or the parent titles on a move; null when there are none */
+            detail?: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: uuid
+             * @description The membership id of who did it; null for the system
+             */
+            performed_by: string | null;
+            actor_name?: string | null;
+            /** Format: uuid */
+            project_id: string | null;
+            project_name?: string | null;
+            /** Format: uuid */
+            recording_id?: string | null;
+            recording_type?: string | null;
+            recording_title?: string | null;
+            /** @description Plain-text excerpt of the content involved */
+            excerpt?: string | null;
+            /** @description "person" or "agent", the actor's membership kind */
+            actor_kind?: string | null;
+            /** @description "mcp" or "api" when what the event is about was written through a connected app or token; null for a person's own work in Thicket */
+            authored_via?: string | null;
+            /**
+             * Format: uuid
+             * @description The container the recording sits in
+             */
+            recording_parent_id?: string | null;
         };
         /**
          * @description The push token's transport: `apns` (Apple's service directly, the native iOS app). `fcm` joins with the Android app.
@@ -4780,7 +4865,7 @@ export interface components {
             id: string;
             /** @description What happened: assigned, mentioned, commented, chatted, chat_activity, announced, reminder, … */
             action: string;
-            /** @description Usually the actor's name; "Thicket" for system rows */
+            /** @description What the row names, never null: the recording's title, or for a comment, a check-in answer or a chat line the title its thread goes by ("Re: {thread}", "Answer to “{question}”", the room); a bulletin's title on announced rows */
             title: string;
             /** @description Reminder phrases are re-derived at read time so a day-before reminder never says Tomorrow on the day itself */
             body?: string | null;
@@ -4843,7 +4928,7 @@ export interface components {
             /** @description Google, Apple, Google or Apple, or null */
             sign_in_label: string | null;
         };
-        /** @description The user's personal preferences, one document across organizations. Field families: locale and display (timezone: a valid IANA zone, time_format 12h|24h, week_start sunday…saturday, theme light|dark|system, background_tint); notification routing (notify_scope everything|mentions, though direct actions like mentions, assignments, pings, and approvals always come through; email_notifications gates email copies; notifications_silenced is the in-app "Shhh" mute with the badge hidden; desktop_notifications; unread_badge for the "(N)" tab title); quiet hours (work_hours_enabled plus work_hours as per-day {start, end} HH:MM windows or null; catch_up_summary opts into one end-of-day summary of held email); email channels (notify_event_reminders, notify_assignment_reminders for due-soon reminders, weekly_assignments_email for the Monday summary, announcement_emails, onboarding_emails, notify_cheers, activity_digest); profile extras (out_of_office_start/out_of_office_end ISO dates, location, current_status); view choices (todos_view list|cards, docs_folders_open). GET returns every field; PATCH accepts any subset. */
+        /** @description The user's personal preferences, one document across organizations. Field families: locale and display (timezone: a valid IANA zone, time_format 12h|24h, week_start sunday…saturday, theme light|dark|system, background_tint); notification routing (notify_scope everything|mentions: on mentions only direct actions like mentions, assignments, pings, and approvals are emailed or pushed, while everything else still lands in the tray, unread, whatever a project bell or a followed thread says; email_notifications gates email copies; notifications_silenced is the in-app "Shhh" mute with the badge hidden; desktop_notifications; unread_badge for the "(N)" tab title); quiet hours (work_hours_enabled plus work_hours as per-day {start, end} HH:MM windows or null; catch_up_summary opts into one end-of-day summary of held email); email channels (notify_event_reminders, notify_assignment_reminders for due-soon reminders, weekly_assignments_email for the Monday summary, announcement_emails, onboarding_emails, notify_cheers, activity_digest); profile extras (out_of_office_start/out_of_office_end ISO dates, location, current_status); view choices (todos_view list|cards, docs_folders_open). GET returns every field; PATCH accepts any subset. */
         Preferences: Record<string, never>;
         /**
          * @description Owner and admin administer the org; members are the team (an outside collaborator is a member with `employee` false); clients see only client-visible recordings in clients-enabled projects they were added to.
@@ -4857,6 +4942,8 @@ export interface components {
             slug: string;
             /** @description The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths. */
             key: string;
+            /** @description The slug a pre-July workspace had before its first rename, which never carried the key; null until then, and for every workspace whose slugs all carry the key. The `{orgSlug}` path segment resolves it after the current slug and the key, so a client resolving an address inside its own organization list matches it last, as the server does, and a link or push issued under that address still names the workspace. */
+            legacy_slug: string | null;
             role: components["schemas"]["OrgRole"];
             /** @description Works at the organization. False for an outside collaborator, whose role is `member` but who reaches only the projects they are on and can't make projects, add people or be an admin, and false for a client. */
             employee: boolean;
@@ -4896,6 +4983,8 @@ export interface components {
             role: components["schemas"]["OrgRole"];
             /** @description Works at the organization. False for an outside collaborator, whose role is `member` but who reaches only the projects they are on and can't make projects, add people or be an admin, and false for a client. */
             employee: boolean;
+            /** @description Whether the person may use private chats. False while their company has private chats switched off (Admin › Permissions; `dms_disabled` on the company): they can start none, nobody can start one with them, and `POST /chats` naming them answers 403. Their existing conversations stay readable to everyone in them, with no new lines. */
+            can_chat: boolean;
             /**
              * @description Historical agent identities remain distinguishable for attribution. New integrations use an existing person's OAuth connection.
              * @enum {string}
@@ -4910,7 +4999,10 @@ export interface components {
             /** @description Agents only: true while the agent's runtime is listening. Null for people. */
             active?: boolean | null;
             title?: string | null;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The person's company. An owner, admin or member who isn't an outside collaborator is always in the account's primary company (`is_primary` on `GET /companies`); a collaborator's or a client's may be any other company, or null. An agent's is null.
+             */
             company_id?: string | null;
             company_name?: string | null;
             /** @description null while off */
@@ -4934,7 +5026,10 @@ export interface components {
             role: components["schemas"]["OrgRole"];
             /** @description Works at the organization. False for an outside collaborator's invitation, whose role is `member` but who will reach only the projects they are given, and false for a client's. */
             employee: boolean;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The company the person joins: the account's primary company for an owner, admin or member; a collaborator's or a client's own, or null.
+             */
             company_id?: string | null;
             /** @description Declined invites stay listed; a resend revives them */
             declined: boolean;
@@ -5036,6 +5131,8 @@ export interface components {
             id: string;
             name: string;
             is_client: boolean;
+            /** @description The account's primary company: every owner, admin and member who isn't an outside collaborator belongs to it, and no one else. Listed first; it can be renamed but never deleted or made a client company (403 `primary_company`). */
+            is_primary: boolean;
             /** @description Members drop from chat pickers, can't start DMs, and existing conversations freeze read-only */
             dms_disabled: boolean;
             member_count: number;
@@ -5066,6 +5163,8 @@ export interface components {
             require_two_factor: boolean;
             /** @description null keeps chat and DM history forever; a number hard-deletes older lines lazily on read, permanently */
             history_retention_days: number | null;
+            /** @description Private chat lines older than this many days are deleted as each conversation is next opened; null keeps them forever. Set separately from history_retention_days, which covers project chats */
+            private_chat_history_retention_days: number | null;
             /** @description Per-tool display-name overrides, keyed by tool (message_board, todos, folder, calendar, board, chat, check_ins, clients) */
             tool_names: {
                 [key: string]: string;
@@ -5076,6 +5175,8 @@ export interface components {
             restrict_content_actions: boolean;
             restrict_public_links: boolean;
             limit_comment_editing: boolean;
+            /** @description Admin › Archiving: to-dos and cards are archived 30 days after they're completed, and stay in the project's archive (default false). Off stops future sweeps and restores nothing */
+            auto_archive_completed: boolean;
             /**
              * @description The day the weekly timesheet starts (Admin › Timesheets; default monday). Absent for clients
              * @enum {string}
@@ -5092,6 +5193,8 @@ export interface components {
             slug: string;
             /** @description The workspace's permanent key: lowercase base36, minted once and never changed, the last segment of its slug. Any slug carrying it, and the bare key, name the workspace in the `{orgSlug}` path segment. Hold this, or `id`, as the workspace's identity; the slug is for building paths. */
             key: string;
+            /** @description The slug a pre-July workspace had before its first rename, which never carried the key; null until then, and for every workspace whose slugs all carry the key. The `{orgSlug}` path segment resolves it after the current slug and the key, so a client resolving an address inside its own organization list matches it last, as the server does, and a link or push issued under that address still names the workspace. */
+            legacy_slug: string | null;
             /** @description Omitted when unset */
             logo?: string;
             /** Format: date-time */
@@ -6143,7 +6246,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Refused with 422 (invalid) when it carries a link: a scheme such as https://, a www. address, or a domain followed by a path. A bare domain such as Linear.app is a name and is accepted. Resending the current name is always accepted, even one set before this rule. */
+                    /** @description Validated as POST /orgs validates a name: 1 to 100 characters with at least one letter or number in any script (422 invalid otherwise). Refused with 422 (invalid) when it carries a link: a scheme such as https://, a www. address, or a domain followed by a path. A bare domain such as Linear.app is a name and is accepted. Resending the current name is always accepted and changes nothing, even one set before these rules. */
                     name: string;
                 };
             };
@@ -6157,12 +6260,23 @@ export interface operations {
                 content: {
                     "application/json": {
                         ok: boolean;
+                        /** @description The account's address now: rebuilt from the new name around the permanent key when the name changed it, the same slug otherwise. */
+                        slug: string;
                     };
                 };
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description The new name would give the account an address another account has (`conflict`). Choose a different name. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["Validation"];
         };
     };
@@ -6336,7 +6450,7 @@ export interface operations {
                 recording_type?: string;
                 /** @description Only events about recordings inside this container (a column, a list): the container-watch poll */
                 parent_id?: string;
-                /** @description Keyword filter: title, actor name, or content text */
+                /** @description Keyword filter: title, actor name, content text, or the name of someone added to a project (an `access_changed` row) */
                 q?: string;
             };
             header?: never;
@@ -7626,6 +7740,45 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    pollEvents: {
+        parameters: {
+            query?: {
+                /** @description The next page's position, opaque. Take it from a `Link: rel="next"` URL and never build one; it supersedes `page`. */
+                cursor?: components["parameters"]["cursor"];
+                /** @description Rows per page; default and at most 100 */
+                per_page?: number;
+                /** @description Start a fresh read at this instant */
+                since?: string;
+                /** @description Only this project's events */
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of events, oldest first, and the position to resume from */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        events: components["schemas"]["FeedEvent"][];
+                        /** @description Pass as `cursor` on the next read; the last row's position, or the one you passed when nothing new arrived, null on a first empty read */
+                        position: string | null;
+                        has_more: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Validation"];
+        };
+    };
     listEventCheers: {
         parameters: {
             query?: never;
@@ -8647,6 +8800,37 @@ export interface operations {
             };
         };
     };
+    streamLive: {
+        parameters: {
+            query?: {
+                /** @description The chat room or private chat whose line events to receive */
+                chat?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An open event stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
     getMyNote: {
         parameters: {
             query?: never;
@@ -9350,7 +9534,10 @@ export interface operations {
                     role: components["schemas"]["OrgRole"];
                     /** @description false invites an outside collaborator: `role` must be `member` (422 otherwise). They reach only the projects they are given and can't make projects, add people or be an admin. */
                     employee?: boolean;
-                    /** Format: uuid */
+                    /**
+                     * Format: uuid
+                     * @description An outside collaborator's or a client's company; the account's primary company is refused for them (403 `primary_company`). An owner's, admin's or member's invitation is always in the primary company, whatever this says.
+                     */
                     company_id?: string;
                     name?: string;
                     title?: string;
@@ -9471,7 +9658,10 @@ export interface operations {
                     role?: components["schemas"]["OrgRole"];
                     /** @description false makes the person an outside collaborator (role `member`; 422 with any other `role`); true, without `role`, makes them a member. A collaborator can't be made an admin or owner (403): make them a member first. */
                     employee?: boolean;
-                    /** Format: uuid */
+                    /**
+                     * Format: uuid
+                     * @description An outside collaborator's or a client's company, or null for none. Applied after `role` and `employee`.
+                     */
                     company_id?: string | null;
                     title?: string | null;
                 };
@@ -10158,7 +10348,7 @@ export interface operations {
                 recording_type?: string;
                 /** @description Only events about recordings inside this container (a column, a list): the container-watch poll */
                 parent_id?: string;
-                /** @description Keyword filter */
+                /** @description Keyword filter: title, actor name, content text, or the name of someone added to the project (an `access_changed` row) */
                 q?: string;
             };
             header?: never;
@@ -12069,8 +12259,8 @@ export interface operations {
                      * @description Linked files only: where the file lives; required for the type
                      */
                     url?: string;
-                    /** @description Messages, documents, linked files: who's notified when this posts; they become the thread's exact subscriber set */
-                    notify?: ("everyone" | "none") | string[];
+                    /** @description Messages, documents, linked files: who's notified when this posts; they and the author become the thread's subscriber set ("none": nobody). "asked" is the people whose project bell is on; picked ids are told whatever their bell says */
+                    notify?: ("everyone" | "asked" | "none") | string[];
                     /** @description Dated to-dos only: the repeat schedule, stored as meta.recurrence */
                     recurrence?: components["schemas"]["RecordingRecurrence"];
                 };
@@ -12573,6 +12763,7 @@ export interface operations {
                             creator_name?: string | null;
                             /** Format: date-time */
                             created_at?: string;
+                            /** @description Always false: progress updates are the team's */
                             visible_to_clients?: boolean;
                             /** @description The whole chart as it stood when the update was saved */
                             positions?: components["schemas"]["ProgressSnapshotDot"][];
@@ -12590,6 +12781,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -12662,7 +12854,6 @@ export interface operations {
                     note?: string;
                     /** @description Who is notified and becomes the update's exact subscriber set */
                     notify?: ("everyone" | "none") | string[];
-                    visible_to_clients?: boolean;
                 };
             };
         };
@@ -13270,7 +13461,7 @@ export interface operations {
                     file: string;
                     /** @description Rich notes, sanitized server-side */
                     description_html?: string;
-                    /** @description "everyone", "none", or a JSON array of membership ids; omitted means nobody is notified */
+                    /** @description "everyone", "asked" (the people whose project bell is on), "none", or a JSON array of membership ids, told whatever their bell says; omitted means nobody is notified */
                     notify?: string;
                     /**
                      * @description Who can see a file posted at the top of Docs & Files: "true" shares it with the project's clients (only while the project works with clients), "false" keeps it to the team. Omitted with `notify`, the project's sharing default applies; omitted without `notify`, the file stays team-only. A file inside a folder, or in a dm, follows its parent whatever is sent
@@ -14017,6 +14208,7 @@ export interface operations {
                     require_two_factor?: boolean;
                     /** @description null keeps chat and DM history forever; a number hard-deletes older lines, permanently */
                     history_retention_days?: number | null;
+                    private_chat_history_retention_days?: number | null;
                     /** @description Per-tool display-name overrides applied account-wide */
                     tool_names?: {
                         message_board?: string;
@@ -14034,6 +14226,7 @@ export interface operations {
                     restrict_content_actions?: boolean;
                     restrict_public_links?: boolean;
                     limit_comment_editing?: boolean;
+                    auto_archive_completed?: boolean;
                     /**
                      * @description Owners and admins: the day the weekly timesheet starts. Rows already added to a week show in the new week that holds their day
                      * @enum {string}
@@ -14851,7 +15044,7 @@ export interface operations {
                      * @description The replacement file bytes, up to 50 MB, non-empty
                      */
                     file: string;
-                    /** @description "everyone", "none", or a JSON array of membership ids; omitted defaults to the project audience */
+                    /** @description "everyone", "asked" (the people whose project bell is on), "none", or a JSON array of membership ids, told whatever their bell says; omitted, the choice the file was posted with applies */
                     notify?: string;
                 };
             };
