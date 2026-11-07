@@ -72,6 +72,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/account/export/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Private conversations for the private-chats export
+         * @description Owner only. Every private conversation in the organization with its participants' names, line count and last activity, most recent first, for choosing which GET /account/export/chats exports.
+         */
+        get: operations["listExportableConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/account/export/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Projects the account export can carry
+         * @description Owner only. Every active and archived project, the ones the owner isn't on too, A to Z; never a template or the list library. GET /account/export takes these ids in `projects`.
+         */
+        get: operations["listExportableProjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/account/logo": {
         parameters: {
             query?: never;
@@ -419,9 +459,29 @@ export interface paths {
         head?: never;
         /**
          * Edit an event
-         * @description Edits apply to the whole series for recurring events; to change one day, or one day onward, use the occurrences PATCH endpoint, and to delete them the occurrences DELETE. Invitees are notified of the change. Same fields as create, all optional. `recurrence: null` stops the event recurring. A series keeps its own `exdates` whatever the request sends: each names a day that lives on as its own event or in the trash.
+         * @description Edits apply to the whole series for recurring events; to change one day, or one day onward, use the occurrences PATCH endpoint, and to delete them the occurrences DELETE. Invitees are notified of the change. Same fields as create, all optional. `recurrence: null` stops the event recurring. A series keeps its own `exdates` whatever the request sends: each names a day that lives on as its own event or in the trash. `project_id` (and `calendar_id`) moves the event to another calendar; a move alone writes nothing else.
          */
         patch: operations["updateCalendarEvent"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/calendar/{eventId}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy an event to a calendar
+         * @description Copies the event onto a project's Calendar or (`project_id` null) the account calendar; a repeating event copies as one repeating event. Comments stay behind unless `include_comments` (they keep their authors and times). A client is refused (403); anything but an event, or a project without a Calendar the caller can see, is a 404.
+         */
+        post: operations["copyCalendarEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/{orgSlug}/calendar/{eventId}/ics": {
@@ -451,7 +511,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Where a day of a repeating event now lives
+         * @description For a link, notification or bookmark that names a day of a repeating event (`?occurrence=`) which may since have changed on its own or been deleted: the recording that holds the day now. `split: true` with the piece that took the day (its own event, `series_id` naming the series; `status: trashed` for a deleted day waiting in the trash, or a deleted "all future" part that repeats from it), else the series itself. `occurrence` is the day to open when what holds it repeats; null when the day is neither the series' own nor held by any piece (deleted for good, or never one of its days). An event that does not repeat answers itself.
+         */
+        get: operations["lookupEventOccurrence"];
         put?: never;
         post?: never;
         /**
@@ -466,6 +530,26 @@ export interface paths {
          * @description The edit prompt for recurring events. Default ("No, just change this event"): the day splits off as its own event, linked to the series by `series_id` and `occurrence_key`, and takes the edit. `?mode=future` ("Yes, change future occurrences too"): the series ends the day before and a copy repeating from this day takes the edit; from the first occurrence the whole series is edited in place. Invitees hear about the change as with any edit, and a new date or time logs `rescheduled`. Returns the event that now carries the change, or the series unchanged when nothing changed. Same fields as editing an event, all optional. 404 when the series has no occurrence that day.
          */
         patch: operations["updateEventOccurrence"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/calendar/calendars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The calendars you can put an event in
+         * @description The account calendar first (`project_id` null; never for a client; `calendar_id` null until its first event makes it), then every switched-on Calendar of the active projects you can open, the sample project included and templates never: projects A to Z, each project's Calendars in tool order. Create into one with `POST /calendar` (`project_id`, `calendar_id`), move an event with `PATCH /calendar/{eventId}`, copy one with `POST /calendar/{eventId}/copy`.
+         */
+        get: operations["listEventCalendars"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/{orgSlug}/calendar/feeds": {
@@ -589,7 +673,7 @@ export interface paths {
         };
         /**
          * List your direct chats
-         * @description Your conversations, latest activity first, with participants and a preview of the last line. Direct chats have no project, never appear in activity, and are visible only to their participants. `?status=archived` lists archived ones: readable (and searchable) forever, but no new lines post into them.
+         * @description Your conversations, latest activity first, with participants and a preview of the last line, your unread lines and whether it is frozen. Direct chats have no project, never appear in activity, and are visible only to their participants. `?status=archived` lists archived ones: readable (and searchable) forever, but no new lines post into them.
          */
         get: operations["listChats"];
         put?: never;
@@ -598,6 +682,50 @@ export interface paths {
          * @description Finds the existing conversation with exactly these people or starts one; either way the `dm` recording comes back with 201. Your own id alone starts a chat with just yourself. You can message admins, owners, and anyone you share a project with. Lines are chat children: POST /recordings/{chat_id}/children with type chat_message; archive via PUT /recordings/{id}/status/archived (for everyone, cannot be undone).
          */
         post: operations["findOrCreateChat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/chats/{dmId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One of your private chats
+         * @description A private chat as your conversations list it, archived ones included. Anyone not in it gets a 404.
+         */
+        get: operations["getChat"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Name a chat or set its cover
+         * @description `title` names the conversation (up to 150 characters; empty or null names it for its people). `cover_upload_id` sets its cover to an image posted into this chat (`POST /recordings/{dmId}/uploads`), or removes it with null; anything else posted here is a 422, and an upload elsewhere a 404. An archived chat changes no more (404). A client names a group, and sets or removes its cover, only when they started it (403).
+         */
+        patch: operations["updateChat"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/chats/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whom you may chat with
+         * @description The people you may start a private chat with, A to Z: owners and admins reach everyone; anyone else the owners, the admins and whoever shares a project with them. Nobody in a company whose private chats are off is offered. While your own company's private chats are off, `restriction` names it with how many people it holds and `people` is empty.
+         */
+        get: operations["listChatPeople"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -724,9 +852,49 @@ export interface paths {
         put?: never;
         /**
          * Cheer a change-log event
-         * @description Up to 16 characters of text or emoji. Pings the event's actor through their `notify_cheers` channel, bundled into one notification per recording within 3 hours. An exact duplicate returns 200 `{already_cheered: true}` instead of 201.
+         * @description Up to 16 characters of text or emoji. Notifies the event's actor through their `notify_cheers` channel, bundled into one notification per recording within 3 hours. An exact duplicate returns 200 `{already_cheered: true}` instead of 201.
          */
         post: operations["createEventCheer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/everything": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the account-wide browsers hold for you
+         * @description Whether All check-ins shows for the caller: it appears once check-in content exists for them in a project they can reach (a client's share alone).
+         */
+        get: operations["getEverything"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/everything/{section}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One account-wide browser
+         * @description Every message, comment, doc and file, or check-in answer across the active projects the caller can reach, newest first, 50 a page with `Link: rel="next"` carrying `?cursor=`. A client's share alone; never the sample project's. Docs and files narrow by `kind`, by `uploader_id` (repeatable), and by `attachments`, on by default: files attached to posts, and files in the caller's private chats, join the list.
+         */
+        get: operations["listEverything"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -818,6 +986,70 @@ export interface paths {
         head?: never;
         /** Replace a group's members */
         patch: operations["updateGroup"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/link-services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the external link services
+         * @description The services a project link is added from, in the order a chooser lists them, "External Service" (`other`) last. `id` is what a project link's `service` takes; `prompt` and `placeholder` are the URL field's label and example for that service.
+         */
+        get: operations["listLinkServices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/list-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List to-do list templates
+         * @description The account's to-do list templates by title: active ones, or `?status=archived`. Clients and outside collaborators receive an empty list. Each is a to-do list in a hidden library: open, fill and edit it through the recording routes (`GET /recordings/{id}` and its children), and archive, trash or restore it with `PUT /recordings/{id}/status/{status}`, which `can_archive` says you may do (restoring an archived one is open to everyone who sees it).
+         */
+        get: operations["listListTemplates"];
+        put?: never;
+        /**
+         * Make a to-do list template
+         * @description A new, empty to-do list template from a name and a description, filled afterwards like any list. Clients and outside collaborators receive 403.
+         */
+        post: operations["createListTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/list-templates/{listTemplateId}/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Use a to-do list template in a project
+         * @description Copies the list, its groups, to-dos, notes and assignments to the end of the project's To-dos, team-only. Assignees not on the project join it when you may change its people, else their assignments are dropped; clients and removed people are dropped. An archived template, or one you can't see, answers 404.
+         */
+        post: operations["useListTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/{orgSlug}/merge-people": {
@@ -916,6 +1148,46 @@ export interface paths {
          * @description Open to-dos, cards and card steps assigned to you across projects, grouped into `priorities` (your Up Next list, in your order; items carry `priority_id`) and `non_priorities`. Card steps are normalized under their parent card as `children`: the card is pulled in even when only a step is assigned, and a prioritized step surfaces its card. Top-level items carry `assigned_to_me`, false only for a pulled-in parent card, which is not your assignment and cannot go Up Next. Schedule events you are invited to are not assignments: they live on /my/events and /my/do-today.
          */
         get: operations["getMyAssignments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/assignments/assigned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What you assigned to others
+         * @description Stuff you've assigned: the open to-dos, cards and card steps you assigned to someone else, one row per assignee, soonest due first (undated last). Only active items in projects you can open.
+         */
+        get: operations["listAssignedByMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/assignments/assigned/completed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The completed work you assigned
+         * @description "See the completed work you've assigned": the to-dos, cards and card steps you assigned to someone else that have since been done, newest first, the last 100, one row per assignee, each naming who completed it (`completed_by_name`) and when (`completed_at`). Only active items in projects you can open.
+         */
+        get: operations["listCompletedAssignedByMe"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1308,6 +1580,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/my/presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report that you're active in this account
+         * @description Tells Thicket you're using this account right now, so a notification that isn't addressed to you isn't also emailed while you can see it. Send it when the person interacts with a visible screen, at most once a minute; it counts for two minutes. Notifications addressed to you (@-mentions, assignments, direct messages, reminders, approvals, event invitations, cheers) are emailed either way, and nothing skipped is emailed later: it waits unread in your notifications. Push is unchanged. Agent connections are refused: an agent's presence is its session.
+         */
+        post: operations["reportPresence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Your title in this organization
+         * @description Sets your own title in this organization, as your profile shows it; null or an empty string clears it. An owner or admin sets someone else's through `PATCH /people/{membershipId}`.
+         */
+        patch: operations["updateMyTitle"];
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/my/snoozes": {
         parameters: {
             query?: never;
@@ -1445,7 +1757,7 @@ export interface paths {
         };
         /**
          * Your cross-device UI memory
-         * @description A free-form JSON object of personal UI state, e.g. `{collapsedColumns: {<projectId>: [columnIds]}}` for the saved-just-for-you card-table column collapse, keyed by project id, and `{docsView: {<folderId>: "grid"|"list"}}` for the Docs & Files grid/list choice, remembered per folder (the tool's root container carries the top level's choice, which the project page's Docs & Files card follows; a folder with no entry opens the way its nearest ancestor with one does, else `list`).
+         * @description A free-form JSON object of personal UI state, e.g. `{collapsedColumns: {<projectId>: [columnIds]}}` for the saved-just-for-you board column collapse, keyed by project id, and `{docsView: {<folderId>: "grid"|"list"}}` for the Docs & Files grid/list choice, remembered per folder (the tool's root container carries the top level's choice, which the project page's Docs & Files card follows; a folder with no entry opens the way its nearest ancestor with one does, else `list`).
          */
         get: operations["getUiState"];
         /**
@@ -1497,14 +1809,14 @@ export interface paths {
         post?: never;
         /**
          * Remove someone from the org (or leave)
-         * @description Soft removal: contributions keep their name, and re-inviting the email reactivates the membership. Removing yourself is leaving; leaving accepts an optional `{note}` body (2000 chars max) emailed to the owners with the departure notice. Admin removes send no body.
+         * @description Soft removal: contributions keep their name, and re-inviting the email reactivates the membership. Removing yourself is leaving; leaving accepts an optional `{note}` body (2000 chars max) emailed to the owners with the departure notice. Admin removes send no body. Only an owner removes another owner (403 for an admin), and the last owner can't be removed.
          */
         delete: operations["removePerson"];
         options?: never;
         head?: never;
         /**
          * Change a person's role, title, or company
-         * @description Admins and up. Last-owner protections apply. `role: "client"` also strips group memberships and access to projects that don't work with clients. `employee: false` makes an outside collaborator, who stops following all-access projects they aren't on. A person's company follows their type: becoming an owner, admin or member puts them in the account's primary company, and becoming an outside collaborator or a client takes them out of it, to no company. `company_id` can't move an owner, admin or member out of the primary company (403 `coworker_company`) or put anyone else in it (403 `primary_company`).
+         * @description Admins and up. Last-owner protections apply. Only an owner grants ownership or changes another owner. An outside collaborator or a client can't become an admin or owner (403): make them a member first. `role: "client"` also strips group memberships and access to projects that don't work with clients. `employee: false` makes an outside collaborator, who stops following all-access projects they aren't on. A person's company follows their type: becoming an owner, admin or member puts them in the account's primary company, and becoming an outside collaborator or a client takes them out of it, to no company. `company_id` can't move an owner, admin or member out of the primary company (403 `coworker_company`) or put anyone else in it (403 `primary_company`).
          */
         patch: operations["updatePerson"];
         trace?: never;
@@ -1566,7 +1878,7 @@ export interface paths {
         };
         /**
          * A person's project access
-         * @description The admin Change-access surface (admin and up): every project the person can reach. `has_row` marks an explicit grant; non-clients are on all-access projects implicitly, and client targets see only clients-enabled projects. Removed people answer 404.
+         * @description The admin Change-access surface (admin and up): every project the person can reach. `has_row` marks an explicit grant; non-clients are on all-access projects implicitly, and client targets see only clients-enabled projects. Removed people answer 404. For an agent, anyone who can open its card reads the projects it serves among their own (each `has_row`), so a member's person card can list them; a person's access stays the administrators' to read (404 for others).
          */
         get: operations["getPersonProjects"];
         /**
@@ -1576,6 +1888,26 @@ export interface paths {
         put: operations["setPersonProjects"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/people/{membershipId}/two_factor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Reset someone's two-factor
+         * @description Owners and admins: removes the person's authenticator secret, recovery codes and remembered devices, so they sign in with their usual method and can enroll again (an organization that requires two-factor holds them at setup when they next enter it). Only an owner resets another owner's (403); your own is turned off from your security settings, never here (403). Idempotent for someone without two-factor.
+         */
+        delete: operations["resetPersonTwoFactor"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1618,7 +1950,11 @@ export interface paths {
         delete: operations["revokeInvitation"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Switch a pending invitation's type
+         * @description Owners and admins: `employee: true` makes a pending member's invitation a member's, `false` an outside collaborator's. Someone new invited from a project (PUT /projects/{projectId}/people `create`) arrives as an outside collaborator unless switched. A client's or an admin's invitation is refused (403); an accepted or revoked one answers 404.
+         */
+        patch: operations["updateInvitation"];
         trace?: never;
     };
     "/api/v1/{orgSlug}/people/invitations/{invitationId}/projects": {
@@ -1693,6 +2029,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/people/removed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The organization's removed people
+         * @description Soft-removed people, by name (owners and admins): who an address invited again brings back, and when they left. Agents never list here; members and clients are refused.
+         */
+        get: operations["listRemovedPeople"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/projects": {
         parameters: {
             query?: never;
@@ -1726,7 +2082,7 @@ export interface paths {
         };
         /**
          * Get a project
-         * @description The project plus its `tools`, each with its `container_id` (content is created under that container recording). `timesheet_enabled` is the project's Timesheet switch; clients never receive it.
+         * @description The project plus its `tools`, each with its `container_id` (content is created under that container recording). `timesheet_enabled` is the project's Timesheet switch; clients never receive it. `starred` is your own star; `permissions` says what you may do to the project as a whole, each exactly as the write decides, so a client leaves out what you may not use; `timesheet_hundredths` is the project timesheet's total for the team while its Timesheet is on (null otherwise).
          */
         get: operations["getProject"];
         put?: never;
@@ -1736,9 +2092,29 @@ export interface paths {
         head?: never;
         /**
          * Update a project
-         * @description `color` is a preset card color; anything outside the enum is a 400. `starts_on` and `ends_on` travel together: set both or null both, and `ends_on` must not precede `starts_on` (violations are a 400). `show_activity` toggles the project's activity rollups. `clients_enabled: false` reverts every recording in the project to team-only and clears the client company (Work with clients); it waits for the clients to go: while a client is on the project's roster it is a 403 `clients_on_project` and nothing changes, so remove each client first (PUT /projects/{projectId}/people with `revoke`). `client_company_name` is the label shown on the project. Move the project in or out of a home-screen folder with `folder_id` (or null). `timesheet_enabled` switches the project's Timesheet (a project-details edit: never clients, and "Restrict who can edit project details" applies); the response then carries it. `wallpaper_mode` is how the project's wallpaper paints (`fill` or `tile`); the image itself is PUT/DELETE /projects/{projectId}/wallpaper.
+         * @description `color` is a preset card color; anything outside the enum is a 400. `starts_on` and `ends_on` travel together: set both or null both, and `ends_on` must not precede `starts_on` (violations are a 400). `show_activity` toggles the project's activity rollups. `clients_enabled: false` reverts every recording in the project to team-only and clears the client company (Work with clients); it waits for the clients to go: while a client is on the project's roster it is a 403 `clients_on_project` and nothing changes, so remove each client first (PUT /projects/{projectId}/people with `revoke`). `client_company_name` is the label shown on the project. Move the project in or out of a home-screen folder with `folder_id` (or null). `timesheet_enabled` switches the project's Timesheet (a project-details edit: never clients, and "Restrict who can edit project details" applies); the response then carries it. `wallpaper_mode` is how the project's wallpaper paints (`fill` or `tile`); the image itself is PUT/DELETE /projects/{projectId}/wallpaper. An archived or trashed project takes no changes here (403) until it is unarchived or restored; the same holds for its tools, links, logo, wallpaper and project health switch.
          */
         patch: operations["updateProject"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a project's archived items
+         * @description Every archived item in the project, newest archive first: each with the tool it lists under (`health` for a health update, `other` for anything without a tool) and whether the Admin › Archiving sweep archived it rather than a person. Each archived row is its own entry; unarchiving one with PUT /recordings/{recordingId}/status/active brings back what it holds. Anyone who can open the project reads it; clients see only what is shared with them and never unarchive.
+         */
+        get: operations["listProjectArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/{orgSlug}/projects/{projectId}/audience": {
@@ -1753,6 +2129,26 @@ export interface paths {
          * @description The people and groups an item in this project reaches: everyone on the project's roster, every teammate when the project is open to everyone in the account, and clients only when the item is visible to clients. Removed people never appear, and a client caller sees only the people clients can see. This is the list the @-mention, assignee, subscriber and invitee pickers offer. `PUT /recordings/{id}/assignees` refuses (403) and `PUT /recordings/{id}/subscribers` skips anyone outside it, and a mention of anyone outside it is never delivered, so build pickers on this rather than on `GET /projects/{projectId}/people`. Pass the item's `visible_to_clients`, or for a new item the visibility it will have. Groups carry the members the item reaches; a client caller gets only the groups whose every member already reaches it.
          */
         get: operations["getProjectAudience"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/client-lens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the project's client can see
+         * @description For the team: per tool switched on, how many of its shareable items are shared with the project's client out of the total (`messages`, `lists`, `docs`, `events`, `questions`; archived items counted, drafts, the trash and repeating pieces not), the newest six shared, and for Chat and Boards (`chat`, `board`) whether each is shared whole (`shared` 1 of `total` 1). Clients never learn who can see what, so a client asking gets 404.
+         */
+        get: operations["getProjectClientLens"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1816,7 +2212,7 @@ export interface paths {
         put?: never;
         /**
          * Post a health update
-         * @description Move the needle: `position` (0 to 100) is required, `status` defaults to on_track. Creates a commentable, cheerable `health_update` recording. `notify` is the update's exact subscriber set; omitted, it falls back to the project notify audience (Thicket convention, vs bc3's omit meaning nobody). `visible_to_clients` defaults to false, hidden from clients. Only the note is editable afterwards (`PATCH /recordings/{id}`, author only); trashing the update rolls the needle back to the previous one.
+         * @description Move the gauge: `position` (0 to 100) is required, `status` defaults to on_track. Creates a commentable, cheerable `health_update` recording. `notify` is the update's exact subscriber set; omitted, it falls back to the project notify audience (Thicket convention, vs bc3's omit meaning nobody). `visible_to_clients` defaults to false, hidden from clients. Only the note is editable afterwards (`PATCH /recordings/{id}`, author only); trashing the update rolls the gauge back to the previous one.
          */
         post: operations["createHealthUpdate"];
         delete?: never;
@@ -1839,6 +2235,26 @@ export interface paths {
          * @description Owner-only: ordinary membership plus an activity event, on any project. Admins and members receive 403. This and `?scope=all` listing are the only cracks in the invite-only wall: owners may see and self-add, never silently read.
          */
         post: operations["joinProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave a project
+         * @description Takes you off the project's roster and its threads. Refused with 403 and a line saying what to do instead when you are its only person, and on a project open to everyone on the team, where access comes from the project, not the roster. An outside collaborator, whom a project open to everyone never covers, leaves either kind. A client can't leave a project: a teammate removes them.
+         */
+        post: operations["leaveProject"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1976,7 +2392,7 @@ export interface paths {
         get: operations["listProjectPeople"];
         /**
          * Change who has access
-         * @description Either replace the explicit access list with `membership_ids`, or apply deltas: `grant` and `revoke` take membership ids, and `create` invites someone new straight into this project (the grant rides the invitation). Provide at least one of the four. Clients can only be granted while the project works with clients; otherwise 403.
+         * @description Either replace the explicit access list with `membership_ids`, or apply deltas: `grant` and `revoke` take membership ids, and `create` invites someone new straight into this project (the grant rides the invitation). Provide at least one of the four. `note` rides the emails of those granted and invited. Clients can only be granted while the project works with clients; otherwise 403. To take yourself off a project use POST /projects/{projectId}/leave, which also refuses a project open to everyone on the team.
          */
         put: operations["setProjectPeople"];
         post?: never;
@@ -2203,6 +2619,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/projects/{projectId}/trash/{recordingId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one trashed item for good
+         * @description "Delete Forever" on one row of the project trash page: the same set GET /projects/{projectId}/trash shows you (the whole project trash for owners and admins, your own items as a member, your own posts as a client), one item at a time, with everything trashed with it; 404 for an item outside that set. The owner's account-wide DELETE /trash/{recordingId} reaches everything. Irreversible.
+         */
+        delete: operations["destroyProjectTrashItem"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/projects/{projectId}/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record that you opened a project
+         * @description Records that you opened the project now: it leads your recently visited projects, the order the home listing's `visited_at` carries. A client's project page sends it on opening, as the web's page does. A project you can't open records nothing and answers 404.
+         */
+        post: operations["recordProjectVisit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/projects/{projectId}/wallpaper": {
         parameters: {
             query?: never;
@@ -2354,7 +2810,7 @@ export interface paths {
         head?: never;
         /**
          * Edit a recording
-         * @description All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields, and `recurrence` set on an instance starts a separate series under a fresh `meta.recurrenceSeriesId` while the series it came from rolls on. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed. The Not Now and Done card-table columns keep their `title` and their description (`content`/`content_html`): editing either refuses (404).
+         * @description All fields stay editable after creation. To-dos use `content`/`content_html` for notes and `starts_on`..`due_on` for a date range. `recurrence` is to-dos only (422 otherwise): validated and merged into `meta.recurrence` without clobbering sibling keys, `null` stops the series; editing the primary re-projects every FUTURE occurrence while already-spawned instances keep their own fields, and `recurrence` set on an instance starts a separate series under a fresh `meta.recurrenceSeriesId` while the series it came from rolls on. `scheduled_at` re-schedules a draft (`null` removes the schedule). `base_name` renames an upload, keeping the extension. `url` changes a linked file's address (422 for anything else), merged into its meta so its other keys stay; `meta` itself replaces the whole meta. `schedule` and `membership_ids` are check-in questions only (new askees get subscribed). Comment and chat-line edits are author-only and stamp `meta.editedAt`; the governance 15-minute edit window returns 403 once closed. The Not Now and Done columns of a board keep their `title` and their description (`content`/`content_html`): editing either refuses (404).
          */
         patch: operations["updateRecording"];
         trace?: never;
@@ -2368,13 +2824,13 @@ export interface paths {
         };
         /**
          * List a question's answers
-         * @description Answers to a check-in question, newest day first. Each answer is stamped with its day (`starts_on`); rows carry `creator_name` and `comment_count`.
+         * @description Answers to a check-in question, newest day first, a day's answers in the order they were posted. Each answer is stamped with its day (`starts_on`); rows carry `creator_name`, `creator_image` and `comment_count`. Without `days`, every answer the filters keep. With `days`, the listing pages by day: the answers of the newest `days` days that have answers (after `date`, `creator_id` and `before`), a day never split across pages, and while older days remain a `Link: <url>; rel="next"` header whose URL keeps every filter and sets `before` to the oldest day returned; follow it, and no header means the last page. Day pages and `before` leave out an answer without a day.
          */
         get: operations["listAnswers"];
         put?: never;
         /**
          * Answer a check-in question
-         * @description Answers the given day, default today; any day is pickable. Send `content` (plain text) or `content_html` (rich, sanitized); one is required. Answers are commentable and cheerable, stamped with their day on `starts_on`, and notify the question's subscribers, never the poster. Editing afterwards is author-only (PATCH `content` or `starts_on` on the answer; anyone else gets 404).
+         * @description Answers the given day, default today; any day is pickable. Send `content` (plain text) or `content_html` (rich, sanitized); one is required. Answers are commentable and cheerable, stamped with their day on `starts_on`, and notify the question's subscribers, never the poster. Editing afterwards is author-only (PATCH `content` or `starts_on` on the answer; anyone else gets 404). A template's questions take no answers (403): a template never asks, and a project made from it starts without them.
          */
         post: operations["createAnswer"];
         delete?: never;
@@ -2454,9 +2910,29 @@ export interface paths {
         get: operations["listAssignees"];
         /**
          * Replace the assignee set
-         * @description Assignment is always many-capable: PUT replaces the WHOLE set (always an array; [] clears). New assignees are notified and subscribed, and so is whoever assigned them: assigning follows the work. Everyone newly added must be able to open the recording (on the project's people, or a teammate on a project open to everyone; a client only on client-visible work; never a removed person), otherwise 403 and nothing changes.
+         * @description Assignment is always many-capable: PUT replaces the WHOLE set (always an array; [] clears). New assignees are notified and subscribed, and so is whoever assigned them: assigning follows the work. Everyone newly added must be able to open the recording (on the project's people, or a teammate on a project open to everyone; a client only on client-visible work; never a removed person), otherwise 403 and nothing changes. A client assigns only on work they posted (403 otherwise).
          */
         put: operations["setAssignees"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A board or a column in one read
+         * @description For a board (`board`): its active columns in board order, Triage first, then the custom columns in position order, then Not Now and Done. For a column (`column`): that column alone, whatever its status. Each column is a children-listing row (`ChildListRow`, its `role`, `color`, `hold_enabled` and `card_count`) with `permissions`, `subscribed` (whether the caller is subscribed, which on a column is watching it for new cards) and `collapsed` (whether the caller collapsed it for themselves: `collapsedColumns` in `/my/ui-state`, keyed by the board), and its active cards (`cards`, at most 500), held cards included (`on_hold`), Done's newest finished first and every other column's in position order, each a `ChildListRow` with `permissions`. A client reads a shared board and what follows it; an unshared board is not found.
+         */
+        get: operations["getBoard"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -2496,7 +2972,7 @@ export interface paths {
         put?: never;
         /**
          * Leave a cheer
-         * @description A short reaction: up to 16 characters of emoji or text. Rejected while comments are closed, on drafts, and on uncheerable types (404). Cheering notifies the recording's author only, on their own channel gated solely by their notify_cheers preference (never the notify scope), bundled into one notification per recording within 3 hours. Remove one via DELETE /cheers/{cheer_id}.
+         * @description A short reaction: up to 16 characters of emoji or text. Rejected while comments are closed, on drafts, and on uncheerable types (404): containers and check-in questions, whose answers take the cheers. Cheering notifies the recording's author only, on their own channel gated solely by their notify_cheers preference (never the notify scope), bundled into one notification per recording within 3 hours. Remove one via DELETE /cheers/{cheer_id}.
          */
         post: operations["addCheer"];
         delete?: never;
@@ -2514,13 +2990,13 @@ export interface paths {
         };
         /**
          * List a container's children
-         * @description Default order is position/created; `sort`+`direction` choose another order. With `sort=created_at` the listing pages: `limit` sizes a page and the `Link: rel="next"` header's URL carries the next page's opaque `cursor`, in the requested direction (chat history walks back with `direction=desc`). The older `before` instant still answers but can skip a row that shares its millisecond. Rows carry `creator_name`, `creator_image`, `comment_count`, `last_comment_at` so list surfaces render bylines and comment badges without N+1 lookups; `chat_message` rows additionally carry their `cheers`, `client_approval` and `card` rows their `assignees` (with `image`), `card` rows `step_count`/`steps_done`, `column` rows `card_count`, `todolist` rows `todo_open_count`/`todo_done_count` (groups included), and `upload` rows `byte_size`/`content_type`: everything a list row shows, batched, never a fetch per row. `status=drafted` only ever returns the caller's own drafts.
+         * @description Default order is position/created; `sort`+`direction` choose another order. With `sort=created_at` the listing pages: `limit` sizes a page and the `Link: rel="next"` header's URL carries the next page's opaque `cursor`, in the requested direction (chat history walks back with `direction=desc`). The older `before` instant still answers but can skip a row that shares its millisecond. Rows carry `creator_name`, `creator_image`, `comment_count`, `last_comment_at` so list surfaces render bylines and comment badges without N+1 lookups; `chat_message` rows additionally carry their `cheers`, `client_approval`, `card` and `todo` rows their `assignees` (with `image`), `card` rows `step_count`/`steps_done`, `todo` rows `subtask_count`/`subtasks_done` and `completed_by_name`, `column` rows `card_count`, `todolist` rows `todo_open_count`/`todo_done_count` (groups included), `folder` rows `item_count`, and `upload` rows `byte_size`/`content_type`: everything a list row shows, batched, never a fetch per row. `status=drafted` only ever returns the caller's own drafts.
          */
         get: operations["listChildren"];
         put?: never;
         /**
          * Create content under a container
-         * @description Creates any content type under its container; parent rules are validated server-side (message under message_board, todolist under todos or todolist as a group, todo under todolist/todos/todo as a subtask, document/upload/linked_file/folder under folder, calendar_event under calendar, column under board, card under column, step under card, chat_message under chat or dm, question under check_ins, answer under question). `url` is required for linked_file (stored on meta.url). `notify` applies to messages, documents, and linked files: "everyone" (default), "asked" (the people who asked to be notified about this project: their project bell, else their account notify scope, is everything; the web composer's default), "none", or membership ids, who are told whatever their bell says; the resolved set is notified when the item posts and, with the author, becomes its subscriber set ("none" subscribes nobody, not even the author), honored when a draft or scheduled post publishes; picked people outside the project audience are dropped. `completion_subscriber_ids` are subscribed at creation and notified on completion. `recurrence` needs a dated to-do (422 otherwise) and makes it a recurring series' primary. `status: "drafted"` keeps it private to you until published; add `scheduled_at` to publish automatically. A client posts anywhere it can see: messages, to-do lists and groups, to-dos in a list, documents, folders, linked files, events, chat lines, questions and answers, each visible to clients whatever `visible_to_clients` says. Clients can't add loose to-dos, columns, cards, steps or correspondence, draft, or set a `meta.color` (403).
+         * @description Creates any content type under its container; parent rules are validated server-side (message under message_board, todolist under todos or todolist as a group, todo under todolist/todos/todo as a subtask, document/upload/linked_file/folder under folder, calendar_event under calendar, column under board, card under column, step under card, chat_message under chat or dm, question under check_ins, answer under question). `url` is required for linked_file (stored on meta.url). `notify` applies to messages, documents, and linked files: "everyone" (default), "asked" (the people who asked to be notified about this project: their project bell, else their account notify scope, is everything; the web composer's default), "none", or membership ids, who are told whatever their bell says; the resolved set is notified when the item posts and, with the author, becomes its subscriber set ("none" subscribes nobody, not even the author), honored when a draft or scheduled post publishes; picked people outside the project audience are dropped. `completion_subscriber_ids` are subscribed at creation and notified on completion. `recurrence` needs a dated to-do (422 otherwise) and makes it a recurring series' primary. `status: "drafted"` keeps it private to you until published; add `scheduled_at` to publish automatically. A client posts anywhere it can see: messages, to-do lists and groups, to-dos in a list, documents, folders, linked files, events, chat lines, questions and answers, each visible to clients whatever `visible_to_clients` says. A card is never created in a board's Done column, and an answer never under a template's question (403): add the card elsewhere and move it to Done. Clients can't add loose to-dos, columns, cards, steps or correspondence, draft, or set a `meta.color` (403).
          */
         post: operations["createChild"];
         delete?: never;
@@ -2542,6 +3018,26 @@ export interface paths {
          * @description Color band on a to-do group or card column, or icon tint on a Docs & Files item (folder, doc, file, linked file); `white` or null clears. The special Triage/Not Now/Done columns and the root folder refuse (404).
          */
         put: operations["setRecordingColor"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/column": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Move a card along its board
+         * @description One write for a card's place on its board: `column_id` (its own column to stay), `on_hold` to park it in or take it out of that column's On Hold section, and `position` (fractional; drag surfaces send the midpoint between neighbors) to place it. A card arriving from another column without a `position` lands at the top. Leaving a column releases a held card; moving into Done completes the card and out of Done reopens it. `on_hold: true` is refused with 404 in a column without the section, and in Triage, Not Now and Done. Moving along a board stays open under Admin's move restriction; a client moves cards on a shared board and never holds one.
+         */
+        put: operations["moveCardToColumn"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2603,7 +3099,7 @@ export interface paths {
         get?: never;
         /**
          * Mark done
-         * @description Completion (todos, cards, steps) is orthogonal to status; the payload carries provenance (`completed_at`, `completed_by_id`). Completing a to-do notifies its subscribers, excluding whoever checked it off; completing a subtask never touches the parent and pings the parent to-do's subscribers plus the subtask's own. Cards: completion IS the Done column, so PUT moves the card to its board's Done column (top slot) and stamps it. Completing a recurring primary immediately spawns the next occurrence.
+         * @description Completion (todos, cards, steps) is orthogonal to status; the payload carries provenance (`completed_at`, `completed_by_id`). Completing a to-do notifies its subscribers, excluding whoever checked it off; completing a subtask never touches the parent and notifies the parent to-do's subscribers plus the subtask's own. Cards: completion IS the Done column, so PUT moves the card to its board's Done column (top slot) and stamps it. Completing a recurring primary immediately spawns the next occurrence.
          */
         put: operations["completeRecording"];
         post?: never;
@@ -2677,6 +3173,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A chat's lines
+         * @description A chat room's or private chat's lines as the room shows them, oldest first within the page: each with its author, its reply quote and link preview, its cheers, the files it posts, whether it was edited, and what you may do to it. With no position, the newest page; `before` (a line's `cursor`) the page before that line, `has_more` saying whether older lines remain; `after` the lines posted since a line, oldest first, up to `limit` (the live stream's catch-up); `ids` those lines again, a line asked for and missing having been deleted. Send at most one of the three. Reading applies the organization's history window first, deleting older lines for good. Anything but a chat room or private chat you can read is a 404.
+         */
+        get: operations["listChatLines"];
+        put?: never;
+        /**
+         * Post a line
+         * @description Posts a line into a chat room or private chat, rich (`content_html`, sanitized) or plain (`content`). `reply_to_id` quotes a line of this chat: its author and opening words are kept on the new line, so the quote outlives its source; a line elsewhere is a 404. The first public link in the line is previewed once, as it posts. Files ride in the HTML as attachments (`POST /attachments`, with `dm_id` for a private chat). An empty line is a 422; a frozen private chat, or an archived one, takes no line (403 and 404).
+         */
+        post: operations["postChatLine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/lines/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a chat
+         * @description You are reading this chat, as opening its page says: a chat room's bundled chat notifications, or a private chat's line notifications, are marked read. A notification that mentions you stays unread until it is opened. Anything but a chat room or private chat is a 404.
+         */
+        post: operations["readChatLines"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/message-board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A Message Board in its order
+         * @description The board's order (`sort`, one setting for everyone on the board: `newest` newest post first, `activity` latest comment first with a message that has none placed by its post, `alpha` A to Z by title; `newest` when it was never set), its pinned messages, most recently pinned first, and its other active messages in that order, cut at `limit` with `has_more` beyond it. `category_id` shows one category's messages. Every row is a children-listing row (`ChildListRow`) with its byline and comment meta. A client gets the messages shared with them. Your drafts on the board are `GET /my/drafts` by `parent_id`.
+         */
+        get: operations["getMessageBoard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/message-board/sort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a Message Board's order
+         * @description Sets the order everyone on the board sees: `newest`, `activity` (latest comment) or `alpha` (A to Z). The team sets it; a client is refused (403). Anything but a Message Board is 404.
+         */
+        put: operations["setMessageBoardSort"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/notified": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List who was notified
+         * @description Everyone who has been notified about this item, by name: the change log's "who was notified". Reminders and cheer notifications don't count.
+         */
+        get: operations["listNotifiedPeople"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/recordings/{recordingId}/opt-out": {
         parameters: {
             query?: never;
@@ -2727,7 +3327,7 @@ export interface paths {
         get?: never;
         /**
          * Pin a message
-         * @description Pins a message to the top of its board; messages only, and at most 10 pinned per board (the 11th refuses).
+         * @description Pins a message to the top of its board; messages only, and at most 10 pinned per board (the 11th refuses). The 10 are the board's active messages: an archived or trashed message keeps its pin for when it returns but holds no place.
          */
         put: operations["pinRecording"];
         post?: never;
@@ -2751,7 +3351,7 @@ export interface paths {
         get?: never;
         /**
          * Move and/or reorder
-         * @description Kanban moves, drag reorders, and moving a to-do into/out of/between lists and groups (a group is a todolist, so `parent_id` is the destination list or group; the todos container = loose). `position` is fractional: drops send the midpoint between neighbors. Cross-project parents move the whole subtree; a parent inside the recording's own subtree (folder/group cycles) returns 404. Position-only calls (pure reorders) don't log a moved activity event; re-parents do. Moving a card across the Done boundary completes it (in) or clears the stamp (out).
+         * @description Kanban moves, drag reorders, and moving a to-do into/out of/between lists and groups (a group is a todolist, so `parent_id` is the destination list or group; the todos container = loose). `position` is fractional: drops send the midpoint between neighbors. Cross-project parents move the whole subtree; a parent inside the recording's own subtree (folder/group cycles) returns 404. Position-only calls (pure reorders) don't log a moved activity event; re-parents do. Moving a card across the Done boundary completes it (in) or clears the stamp (out). A column is reordered on its board and never moves to another (`parent_id` on a column is a 403).
          */
         put: operations["moveRecording"];
         post?: never;
@@ -2862,7 +3462,7 @@ export interface paths {
         };
         /**
          * List a project's check-in questions
-         * @description Questions under the project's check_ins container. Rows carry `schedule`, `askees`, `answer_count`, and `recent_answer_count` (last 24 hours).
+         * @description The active questions under a check_ins container, in position order. Each row carries the question's facts, as `GET /recordings/{recordingId}` does on a question: `schedule` (as the question asks, in the `CheckInSchedule` shape) with `time_zone`, `askees`, `answer_count`, `recent_answer_count` (last 24 hours), `paused`, `opted_out`, `template` and `answerable`. A client reads the questions shared with them, and counts the answers shared with them.
          */
         get: operations["listQuestions"];
         put?: never;
@@ -2885,12 +3485,32 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List what links here
-         * @description Recordings whose content links to this one, enriched for the References tab (project_name, creator_name, referenced_at, excerpt) and filtered to what the caller can access: project access, clients see client-visible only, DM sources show to participants only.
+         * List what links here, or what it links to
+         * @description Recordings whose content links to this one, or with `direction=from` the recordings this one's content links to, enriched for the References tab (project_name, creator_name, referenced_at, excerpt) and filtered to what the caller can access: project access, clients see client-visible only, DM sources show to participants only.
          */
         get: operations["listRecordingReferences"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/standard-columns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give an empty board its standard columns
+         * @description For a board with no columns: adds Triage, Not now, In progress and Done, as a new project's board starts, the creator watching each. A board that already has columns is left as it is. Answers the board as one read.
+         */
+        post: operations["addStandardColumns"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2907,7 +3527,7 @@ export interface paths {
         get?: never;
         /**
          * Archive, trash, or restore
-         * @description Works on ANY type; trash is recoverable. Tool containers refuse (except a folder with a parent, which archives and trashes with its contents cascading); drafts must publish before archiving, and `active` on a draft is 404 (publish it with POST /recordings/{recordingId}/publish); restoring a trashed draft returns it to drafted, never published. Clients may trash and restore only what they posted and never archive or unarchive (403). The governance restrict-content-actions toggle can refuse non-authors (403).
+         * @description Works on ANY type; trash is recoverable. Tool containers refuse (except a folder with a parent, which archives and trashes with its contents cascading); drafts must publish before archiving, and `active` on a draft is 404 (publish it with POST /recordings/{recordingId}/publish); restoring a trashed draft returns it to drafted, never published. Clients may trash and restore only what they posted and never archive or unarchive (403). The governance restrict-content-actions toggle can refuse non-authors (403). A private chat only archives, and archiving one can't be undone: `active` and `trashed` on a private chat are 403.
          */
         put: operations["setRecordingStatus"];
         post?: never;
@@ -2928,7 +3548,7 @@ export interface paths {
         get: operations["listSubscribers"];
         /**
          * Add or remove subscribers
-         * @description Deltas, not replacement: `add` and `remove` are membership id lists. `notify: "now"` pings added people immediately; `"next"` stays quiet until the next comment. People in `add` who can't open the recording (off an invite-only project, a client on team-only work, removed) are skipped. Returns the updated subscriber set.
+         * @description Deltas, not replacement: `add` and `remove` are membership id lists. `notify: "now"` notifies added people immediately; `"next"` stays quiet until the next comment. People in `add` who can't open the recording (off an invite-only project, a client on team-only work, removed) are skipped. A private chat keeps the people it started with: its subscribers are its participants, so this is a 403 on one. Returns the updated subscriber set.
          */
         put: operations["updateSubscribers"];
         post?: never;
@@ -2950,7 +3570,10 @@ export interface paths {
          * @description Your subscription on the recording plus the full subscriber list. On a card column this is "watch this column" (subscribers hear about new cards and column comments); on a chat room it is the chat bell ("Notify me when people chat").
          */
         get: operations["getSubscription"];
-        /** Subscribe yourself */
+        /**
+         * Subscribe yourself
+         * @description Subscribes you to something you can open. Anything you can't open is a 404, a private chat you aren't in included: a private chat's subscribers are its people.
+         */
         put: operations["subscribeRecording"];
         post?: never;
         /** Unsubscribe yourself */
@@ -3020,6 +3643,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/todo-outline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A To-dos tool or a list in one read
+         * @description For the project's To-dos tool (`todos`): its lists in position order, each with its groups and open to-dos and each group with its open to-dos, and the tool's loose to-dos. For a list or a to-do list template (`todolist`): the list itself as a row (`list`), its groups, each with its open to-dos, and its own open to-dos (`lists` empty). Every row is a children-listing row (`ChildListRow`) with its riders and `permissions`. Completed to-dos are not included; read them with `GET /recordings/{recordingId}/children?type=todo&completed=true`. A client gets the lists shared with them and what follows them, never loose to-dos. Reading it first creates any repeating to-do whose day has come, as the to-dos pages do.
+         */
+        get: operations["getTodoOutline"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/recordings/{recordingId}/uploads": {
         parameters: {
             query?: never;
@@ -3034,10 +3677,50 @@ export interface paths {
         get: operations["listChatUploads"];
         put?: never;
         /**
-         * Upload a file
-         * @description Multipart upload into a project folder (or a dm, for files posted into a conversation). `file` is required and capped at 50 MB. `notify` follows the M5 semantics: "everyone", "asked" (the people whose project bell is on), "none", or a JSON array of membership ids, told whatever their bell says; omitted means silent. `visible_to_clients` is the upload card's "Who should see this?" for a file posted at the top of Docs & Files. Returns 402 when the plan's storage cap is reached. Rename later via PATCH /recordings/{id} with `base_name` (the extension is kept).
+         * Upload a file, or reserve one
+         * @description Two forms. `multipart/form-data`: the file into a project folder (or a dm, for files posted into a conversation), `file` required and capped at 50 MB, posted and notified at once. `notify` follows the M5 semantics: "everyone", "asked" (the people whose project bell is on), "none", or a JSON array of membership ids, told whatever their bell says; omitted means silent. `visible_to_clients` is the upload card's "Who should see this?" for a file posted at the top of Docs & Files. `application/json` (since 2026-11-06): `{filename, byte_size, content_type?}` reserves a file of up to 5 GB in the folder and answers presigned storage URLs (`UploadReservation`): PUT the bytes straight to storage, then post the file, alone or with the rest of the sheet, through `POST /recordings/{folderId}/uploads/post`, which notifies once for them all; cancel with `DELETE /recordings/{folderId}/uploads/{uploadId}`. A reservation unposted after 24 hours is swept. Returns 402 when the plan's storage cap is reached. Rename later via PATCH /recordings/{id} with `base_name` (the extension is kept).
          */
         post: operations["createUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/uploads/{uploadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Give a reserved file back
+         * @description The sheet's Remove on a staged file, or a transfer that died: the reservation made with `POST /recordings/{folderId}/uploads`' JSON form is scrapped, its stored bytes with it. Only the caller's own unposted reservation; one already posted, or gone, answers ok all the same.
+         */
+        delete: operations["abandonUpload"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/uploads/post": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post the staged files as one post
+         * @description The upload sheet's Post: every file reserved with `POST /recordings/{folderId}/uploads`' JSON form and PUT to storage, in one post, so the people notified hear about it once ("uploaded 6 new files"). Files post in order, each verified against its reservation (a multipart upload needs each part's ETag); one that fails stops the rest and comes back in `failed` with the refusal it would have answered, while those before it stay posted and are notified together. `notify` and `visible_to_clients` mean what the multipart form's do, for every file alike. Only the caller's own reservations post. 404 for a reservation that is not the caller's or is gone.
+         */
+        post: operations["postUploads"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3090,6 +3773,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/recordings/{recordingId}/zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a folder as a zip
+         * @description Every file under a Docs & Files folder, its subfolders included, streamed as one zip whose paths mirror the folder tree and whose name is the folder's title. Documents and linked files have no bytes, so they are not in it. Anything but a folder is 404.
+         */
+        get: operations["downloadFolderZip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/recordings/batch": {
         parameters: {
             query?: never;
@@ -3104,6 +3807,26 @@ export interface paths {
          * @description One round trip applies `action` to every id, in order; every id passes the same per-recording guards as the single endpoints, and missing per-action fields return 422. Actions: `assign` REPLACES each recording's assignee set (`assignee_ids: []` removes all assignments); `due` sets a day, a `starts_on`..`due_on` range, or both null for no due date; `shift_dates` moves `starts_on` AND `due_on` forward by `amount` x `unit`, skipping undated recordings (`count` = rows actually shifted); `move` re-parents (arrival order = `ids` order); `copy` deep-copies (returns the copies' `ids`); `status` archives, trashes, or restores; `color` tints Docs & Files items (`white` clears); `group` creates a group in the selection's list, moves the selection in, and returns `group_id`.
          */
         post: operations["batchRecordings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/recordings/zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download several items as one zip
+         * @description The Docs & Files bulk Download: one zip of the given items, a file as itself and a folder as its whole subtree under the folder's name; documents and linked files contribute nothing. A name met twice is numbered ("Notes (2).pdf"). The zip is named Files.zip. Any id the caller can't open is 404.
+         */
+        get: operations["downloadSelectionZip"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3139,9 +3862,69 @@ export interface paths {
         };
         /**
          * Org-wide project health gauges
-         * @description Every accessible active project with its health gauge on and a needle set, most recently updated first. Team only: clients receive 403.
+         * @description Every accessible active project with its health gauge on and a position set, most recently updated first. With `include_unset=true`, also the projects whose gauge is on with no reading yet (status, position and updated_at null), last. Team only: clients receive 403.
          */
         get: operations["getHealthReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/reports/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The organization's Progress overview
+         * @description Every progress chart the caller can reach that moved in the last `recent_days` (90), newest move first, one per To-dos tool, with its tracked lists' dots. Team only: clients receive 403.
+         */
+        get: operations["getProgressReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/reports/roadmap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Roadmap in one read
+         * @description Its thirteen-week window (by default from 6 weeks before the caller's this-week start; `start` pages it; `window_ends_on` is exclusive), every active dated project the caller can reach whose dates meet the window (by start date, then name) with whether the caller may change its dates, the markers inside the window, and whether the caller may add and change markers (owners and admins). Team only: clients receive 403.
+         */
+        get: operations["getRoadmapReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/reports/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tasks added and completed on a day
+         * @description One day's log of to-dos (`kind=todo`, the default) or cards (`kind=card`): what was added and what was completed, with who did it. `date` is a day on the caller's calendar, today by default. Team only: clients receive 403.
+         */
+        get: operations["getTasksReport"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3242,6 +4025,46 @@ export interface paths {
          * @description Every overdue open to-do across accessible projects, grouped into four lateness buckets. Each row carries `days_late` and its assignee chips. Team only: clients receive 403.
          */
         get: operations["getOverdueTodosReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/reports/unassigned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unassigned work, by project
+         * @description Open to-dos and cards nobody is assigned to, by project (A to Z), each project's rows by their list or column. Team only: clients receive 403.
+         */
+        get: operations["getUnassignedWorkReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/reports/upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Upcoming assignments, by due window
+         * @description Every dated open to-do, card and step due today or later, assigned or not, in the due windows (`due_today`, `due_tomorrow`, `due_later_this_week`, `due_next_week`, `due_later`) cut on the caller's calendar day and first day of the week; empty windows are left out. Team only: clients receive 403.
+         */
+        get: operations["getUpcomingWorkReport"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3431,6 +4254,26 @@ export interface paths {
         patch: operations["updateTemplate"];
         trace?: never;
     };
+    "/api/v1/{orgSlug}/templates/{templateId}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Duplicate a template
+         * @description A faithful copy of the template, its tools and content, named "{name} (copy)". Undo it by moving the copy to the trash (`PUT /projects/{copyId}/status/trashed`). Archive, restore and trash a template, and undo those, with `PUT /projects/{templateId}/status/{status}`, which the template's creator, admins and owners may use.
+         */
+        post: operations["duplicateTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/templates/{templateId}/use": {
         parameters: {
             query?: never;
@@ -3583,6 +4426,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/timesheet/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everyone who has or can have time
+         * @description The team by name (clients and agents never have time), with anyone since removed kept while they have hours (`removed`): the Timesheets report's For menu and the weekly timesheet's person switcher. `any_time_logged` says whether any counted time at all is logged where you can see, so a report that finds nothing can tell "nothing is logged yet" from the filters. Team only: a client is not found.
+         */
+        get: operations["listTimesheetPeople"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/trash": {
         parameters: {
             query?: never;
@@ -3643,6 +4506,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/{orgSlug}/trash/restores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore from the account-wide trash, with an undo
+         * @description Owner only. Brings back a trashed item and exactly what was trashed with it (`kind: recording`, the default), or a trashed project template (`kind: template`), and answers an `undo_token` for POST /trash/restores/undo.
+         */
+        post: operations["restoreFromTrash"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/trash/restores/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo a restore from the account-wide trash
+         * @description Owner only. Puts back in the trash exactly what a restore brought back, at its first trashing time and by whoever trashed it, so its 30 days keep counting. 404 when the token has lapsed or the item changed since.
+         */
+        post: operations["undoTrashRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/trash/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trashed project templates
+         * @description Owner only, oldest first: the project templates in the account-wide trash, which GET /trash (recordings alone) leaves out. Each purges 30 days after it was trashed. Restore one with POST /trash/restores (`kind: template`).
+         */
+        get: operations["listTrashedTemplates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/trash/templates/{templateId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Permanently delete a trashed template
+         * @description Owner only and irreversible: the template, its content and its stored files go.
+         */
+        delete: operations["destroyTrashedTemplate"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/uploads/{recordingId}/download": {
         parameters: {
             query?: never;
@@ -3692,13 +4635,13 @@ export interface paths {
         };
         /**
          * List a file's versions
-         * @description The current version plus every past one, newest first: every past version is kept on file.
+         * @description The current version plus every past one, newest first: every past version is kept on file. `posted_at` is when each version was posted; a past version's `created_at` is when it was superseded.
          */
         get: operations["listUploadVersions"];
         put?: never;
         /**
          * Replace the file with a new version
-         * @description Multipart body with `file` (up to 50 MB). Same recording keeps its URL, comments, and subscribers; the outgoing version moves to the kept list and the title and size flip to the new file. `notify` picks who hears about the new version; omitted, the choice the file was posted with applies (everyone when it was posted without one). Returns 402 when the plan's storage cap is reached.
+         * @description Multipart body with `file` (up to 50 MB). Same recording keeps its URL, comments, and subscribers; the outgoing version moves to the kept list and the title and size flip to the new file. `notify` picks who hears about the new version; omitted, the choice the file was posted with applies (everyone when it was posted without one). The team replaces a file; a client gets 403, and so does a file in an archived or trashed project. Returns 402 when the plan's storage cap is reached.
          */
         post: operations["replaceUploadVersion"];
         delete?: never;
@@ -3809,6 +4752,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/join/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an invitation
+         * @description An emailed invitation as its join page shows it, for a native app's join screen. The token is the credential; signed in or out, and a session (cookie or bearer) adds who is looking. States, checked in this order: `unavailable` (the workspace is held: nothing is named; ask support), `invalid` (no invitation, revoked, or the workspace cancelled: nothing is named), `accepted`, `declined`, `expired` (after 14 days, or the inviter is blocked, whose name is then left out), `open`. `email` is the invited address and `has_account` whether it has a Thicket account, so a client can offer sign-in or a new account; `signed_in_as` is the session's address. `organization.id` and `slug` come only to someone already in the workspace (`member`), who goes straight in. Anonymous and never cached.
+         */
+        get: operations["getJoinInvitation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/join/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an invitation
+         * @description The signed-in invitee accepts: the session must belong to the invited address (403 `wrong_account` names it otherwise). Accepting confirms the address, makes or reactivates the membership with the invitation's role, company and title, and grants its projects. Session only: a token is refused 403 `session_required`. Refusals by code: 404 `invitation_invalid` (none, revoked, or the workspace cancelled), 403 `workspace_unavailable`, 409 `invitation_used`, 409 `invitation_declined`, 410 `invitation_expired`.
+         */
+        post: operations["acceptJoinInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/join/{token}/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join with a new account
+         * @description A brand-new invitee's account, made on the invited address (never one the client sends), signed in, and the invitation accepted, in one step. The address counts as confirmed: the invitation proved the mailbox. The session comes back in `set-auth-token`, as from Better Auth's sign-up. `legal_acceptance` names the versions `GET /signup-policy` reports (422 `terms_acceptance_required` otherwise). An address that already has an account answers 409 `account_exists`: sign in and accept instead. A blocked address answers 403 `signup_unavailable`. Refusals by code: 404 `invitation_invalid` (none, revoked, or the workspace cancelled), 403 `workspace_unavailable`, 409 `invitation_used`, 409 `invitation_declined`, 410 `invitation_expired`.
+         */
+        post: operations["joinInvitationWithAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/join/{token}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline an invitation
+         * @description Declines an emailed invitation; no sign-in, the token is the credential. It stamps the decline, tells the inviter while they are still in the workspace, and frees the seat. `state` is `declined`, or `already_declined` when it was: a repeat changes nothing and tells no one. Nothing to decline: 404 `invitation_invalid`, 409 `invitation_used`, 410 `invitation_expired`; 403 `workspace_unavailable`.
+         */
+        post: operations["declineJoinInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/join/link/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an invite link
+         * @description A workspace's shareable invite link as its page shows it: the workspace's name only. States: `unavailable` (the workspace is held), `invalid` (none, replaced by a newer link, or the workspace cancelled; a replaced link leaves no record, so nothing is named), `off` (turned off, or its maker is blocked: ask an admin to invite you), `open`. With a session, `member` says the person is already in, and `organization.id` and `slug` come with it. Anonymous and never cached.
+         */
+        get: operations["getJoinInviteLink"];
+        put?: never;
+        /**
+         * Join through an invite link
+         * @description The signed-in person joins as a team member (the link never makes anything else). The member seat is checked: a full workspace answers 402 `limit_reached`. The address is not confirmed by it. Session only (403 `session_required` for a token). Refusals: 404 `link_invalid`, 410 `link_off`, 403 `workspace_unavailable`.
+         */
+        post: operations["joinWithInviteLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/join/link/{token}/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join through an invite link with a new account
+         * @description An account on the address the person gives, signed in, joined as a team member through the invite link, in one step; the session comes back in `set-auth-token`. The address is not confirmed: the confirmation email follows, as for any sign-up. It is guarded like the sign-up form: 403 `signup_check_failed` when the signup bot check refuses it (`x-captcha-response`; `docs/invitation-abuse-controls-plan.md` §3.5). `legal_acceptance` as for `POST /join/{token}/account`. 409 `account_exists` for an address with an account, 402 `limit_reached` when the workspace is full, 404 `link_invalid`, 410 `link_off`, 403 `workspace_unavailable` or `signup_unavailable`.
+         */
+        post: operations["joinInviteLinkWithAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set your picture
+         * @description Any decodable image up to 10 MB as `file`; it is re-encoded square with its metadata stripped and replaces the previous picture everywhere. A file that isn't an image is a 422. Session-only: personal access tokens receive 403 `session_required`.
+         */
+        put: operations["setMyAvatar"];
+        post?: never;
+        /**
+         * Remove your picture
+         * @description Your initials stand in again. Idempotent. Session-only: personal access tokens receive 403 `session_required`.
+         */
+        delete: operations["removeMyAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/connected-apps": {
         parameters: {
             query?: never;
@@ -3849,6 +4940,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether Thicket is emailing you
+         * @description User-scoped, like preferences: the state belongs to your address, not to an organization. Only you read why email is paused; owners and admins see `Person.email_delivery` without the reason.
+         */
+        get: operations["getEmailStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/email/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn email back on after a junk report
+         * @description Lifts the pause your email provider's junk report put on your address, once per address. Idempotent: while email flows it answers your state unchanged.
+         */
+        post: operations["resumeEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a first password
+         * @description Gives an account that signs in with Google or Apple a password too (8 to 128 characters). An account that already has one is a 409 `password_exists`: change it with `POST /api/auth/change-password` and the current one. Adding a way into the account needs a recent sign-in: an older session is a 403 `session_not_fresh` (sign in again). Session-only: personal access tokens receive 403 `session_required`.
+         */
+        post: operations["setMyPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/preferences": {
         parameters: {
             query?: never;
@@ -3871,6 +5022,26 @@ export interface paths {
          * @description Send only the fields to change; nullable fields accept null to clear. Returns the full updated document.
          */
         patch: operations["updatePreferences"];
+        trace?: never;
+    };
+    "/api/v1/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Your name and email address
+         * @description User-scoped, like preferences: one name and one address across organizations. Send `name`, `email` or both. A new address applies at once: a confirmed account's previous address is told the change happened (`email_notice: previous_address`) and nothing goes to the new one; an account still unconfirmed has its confirmation link sent to the new address instead (`new_address`). The same address is a no-op (`email_notice: null`). A name may not carry a link (422). An address another account uses is a 409 `email_taken`; an address Thicket can't accept is a 422 `email_unavailable`. Session-only: personal access tokens receive 403 `session_required`.
+         */
+        patch: operations["updateMyProfile"];
         trace?: never;
     };
     "/api/v1/me/push-devices": {
@@ -3924,7 +5095,7 @@ export interface paths {
         put?: never;
         /**
          * Send a test push to my devices
-         * @description Sends one push notification ("Push notifications are working on this phone.") to every device the caller has registered, through the transport each device's `kind` names (`apns`, Apple's service directly, for the iOS app): the self-serve end-to-end check behind the app's Notifications settings. `sent: 0` means nothing is registered for this person yet. Tokens the transport has rejected for good are pruned exactly as for a normal fan-out.
+         * @description Sends one push notification ("Push notifications are working on this phone.") to every device the caller has registered, through the transport each device's `kind` names (`apns`, Apple's service directly, for the iOS app; `fcm`, Firebase Cloud Messaging directly, for the Android app, whose words are "Notifications are working" and "They'll reach this device."): the self-serve end-to-end check behind the app's Notifications settings. `sent: 0` means nothing is registered for this person yet. Tokens the transport has rejected for good are pruned exactly as for a normal fan-out.
          */
         post: operations["sendTestPush"];
         delete?: never;
@@ -3942,7 +5113,7 @@ export interface paths {
         };
         /**
          * Your non-secret sign-in security state
-         * @description Session-only account-scoped enrollment bootstrap that remains reachable while an organization requires 2FA. It reveals only whether 2FA and a password are active plus a human-readable social sign-in label; it never returns linked-account identifiers, secrets, or password material. Personal access tokens receive 403 session_required.
+         * @description Session-only account-scoped enrollment bootstrap that remains reachable while an organization requires 2FA. It reveals only whether 2FA and a password are active, a human-readable social sign-in label and which organizations require 2FA of you; it never returns linked-account identifiers, secrets, or password material. Personal access tokens receive 403 session_required.
          */
         get: operations["getSecurityState"];
         put?: never;
@@ -3992,6 +5163,66 @@ export interface paths {
          * @description Effective immediately. Session-only.
          */
         delete: operations["revokeToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/native/apple": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start Sign in with Apple in the app's browser tab
+         * @description For a native app with no Apple SDK: the app opens this address in its browser tab (a Custom Tab), keeping the PKCE verifier its `challenge` hashes. It answers 302 to Apple with the flow's state cookie. Apple's answer signs the tab in, through the web's two-factor page when the account has two-factor on, and lands on `GET /native/apple/finish`, which sends the tab back to the app at `thicket://auth/apple` with a one-time `code` or an `error`. `terms=1` says the person accepted the Terms of Service and the Privacy Policy in force (`GET /signup-policy`), which a new account needs: without it, a new account comes back as `error=TERMS_ACCEPTANCE_REQUIRED`. 503 `apple_unavailable` where Apple isn't configured.
+         */
+        get: operations["startNativeAppleSignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/native/apple/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Return from Sign in with Apple to the app
+         * @description Where Apple's flow lands in the app's browser tab; not called by the app itself. Signed in, it mints a single-use `code` for that sign-in, good for two minutes and bound to the `challenge`, ends the tab's own session, and answers 302 to `thicket://auth/apple?code=…`. Refused, it answers 302 to `thicket://auth/apple?error=…` with `TERMS_ACCEPTANCE_REQUIRED`, `ACCOUNT_UNAVAILABLE`, `SIGNUP_UNAVAILABLE`, `AGENT_SIGN_IN_FORBIDDEN` or `account_not_linked` (each but the first with the server's `message` to show), or `failed` for anything else.
+         */
+        get: operations["finishNativeAppleSignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/native/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a sign-in code for a session
+         * @description The app exchanges the `code` its browser tab brought back, with the PKCE `code_verifier` whose S256 transform was the `challenge`, for a session, returned in `set-auth-token` (send it as `Authorization: Bearer`, as from Better Auth's own sign-in). Anonymous by design: the code and the verifier are the credential. Any attempt spends the code, and every refusal reads alike (401 `invalid_grant`: unknown, expired, used, or a verifier that doesn't match). An account that can't sign in answers 403 with its code (`account_unavailable`). Rate-limited per caller address.
+         */
+        post: operations["exchangeNativeSignInCode"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4061,6 +5292,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A public link's page
+         * @description What `/public/{token}` shows, for a native app claiming that address: the organization it is shared from, the type, the title, when it was made, the sanitized content with its embeds pointed at the link's own file route, and for a file its name, size, type and addresses. No author, project, comments, other versions or edit date. Anonymous: the token is the capability. Answers 404 `not_found`, identical whatever the reason, once the link is revoked, its item or project isn't active, or the organization is cancelled or held.
+         */
+        get: operations["getPublicLinkPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rich-text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a composer offers
+         * @description The code block languages, the named text and highlight colors, the quick cheers and a cheer's length, so a composer offers exactly what the sanitizer keeps. Anonymous and uncached.
+         */
+        get: operations["getRichTextVocabulary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/signup-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the policies a signup accepts
+         * @description The current Terms of Service and Privacy Policy versions, with the page each stands for. Anonymous and never cached (`Cache-Control: no-store`). A native app reads it before making an account and sends both back as `legalAcceptance: {accepted: true, termsVersion, privacyVersion}` (Better Auth's camelCase) on `POST /api/auth/sign-up/email`, or under `additionalData` on `POST /api/auth/sign-in/social` for a Google or Apple account that does not exist yet; an acceptance naming any other version is refused with `400 TERMS_ACCEPTANCE_REQUIRED` and no account.
+         */
+        get: operations["getSignupPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4068,7 +5359,7 @@ export interface components {
         /** @description Every non-2xx response carries this envelope. */
         Error: {
             error: {
-                /** @description Machine-readable cause: unsafe_link (422: remove the prohibited destination; input is not saved), safety_check_unavailable (503: retry after Retry-After; input is not saved), unauthenticated, user_agent_required, forbidden, read_only_token, session_required, limit_reached, not_found, invalid, bad_request, rate_limited, app_update_required (426: an app too old to serve, told by its User-Agent: the retired 1.x mobile app, or a native version below GET /api/v1/client-versions' minimum_version), … */
+                /** @description Machine-readable cause: content_review_required (422: input is not saved; invitations and public sharing are held pending support review), unsafe_link (422: remove the prohibited destination; input is not saved), safety_check_unavailable (503: retry after Retry-After; input is not saved), unauthenticated, user_agent_required, forbidden, read_only_token, session_required, limit_reached, not_found, invalid, bad_request, rate_limited, account_inactive (403: the organization's trial ended and it is paused until an owner buys a plan on the web; GET /account and the organization lists report `frozen`), app_update_required (426: an app too old to serve, told by its User-Agent: the retired 1.x mobile app, or a native version below GET /api/v1/client-versions' minimum_version), … */
                 code: string;
                 message: string;
             };
@@ -4080,7 +5371,7 @@ export interface components {
         RecordingType: "message_board" | "message" | "comment" | "todos" | "todolist" | "todo" | "progress_update" | "folder" | "document" | "upload" | "linked_file" | "calendar" | "calendar_event" | "board" | "column" | "card" | "step" | "chat" | "chat_message" | "check_ins" | "question" | "answer" | "dm" | "clients" | "client_approval" | "client_correspondence" | "personal_note" | "health" | "health_update";
         /** @enum {string} */
         RecordingStatus: "active" | "archived" | "trashed" | "drafted";
-        /** @description The uniform shape every recording serializes to; type-specific data rides in `meta`. List rows on children endpoints additionally carry creator_name, creator_image, comment_count, last_comment_at, plus per-type riders: chat_message rows their cheers; client_approval and card rows their assignees; card rows step_count/steps_done; column rows card_count; todolist rows todo_open_count/todo_done_count; upload rows byte_size/content_type. */
+        /** @description The uniform shape every recording serializes to; type-specific data rides in `meta`. List rows on children endpoints additionally carry creator_name, creator_image, comment_count, last_comment_at, plus per-type riders: chat_message rows their cheers; client_approval and card rows their assignees; card rows step_count/steps_done; column rows card_count; todolist rows todo_open_count/todo_done_count; folder rows item_count; upload rows byte_size/content_type. */
         Recording: {
             /** Format: uuid */
             id: string;
@@ -4118,6 +5409,31 @@ export interface components {
             completed_at?: string | null;
             /** Format: uuid */
             completed_by_id?: string | null;
+            /**
+             * Format: date-time
+             * @description When it went to the trash; null outside the trash
+             */
+            trashed_at?: string | null;
+            /**
+             * Format: uuid
+             * @description Who put it in the trash, by membership id; null outside the trash
+             */
+            trashed_by_id?: string | null;
+            /**
+             * Format: date-time
+             * @description When the trash sweep deletes it for good, 30 days after its trashing; null outside the trash
+             */
+            purge_after?: string | null;
+            /**
+             * Format: date-time
+             * @description When it was archived; null outside the archive
+             */
+            archived_at?: string | null;
+            /**
+             * Format: uuid
+             * @description Who archived it, by membership id; null outside the archive, and null when the Admin › Archiving sweep did it
+             */
+            archived_by_id?: string | null;
             /** Format: uuid */
             creator_id?: string | null;
             visible_to_clients?: boolean;
@@ -4134,6 +5450,8 @@ export interface components {
             } | null;
             /** @description "mcp" or "api" when the recording was written through a connected app or token (the byline's "via" mark); null for a person's own work in Thicket */
             authored_via?: string | null;
+            /** @description The connected app's name when the token or MCP session that wrote it names one (the byline's "via Print Desk"); null for a bare token and for a person's own work */
+            authored_via_client?: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -4142,7 +5460,18 @@ export interface components {
         SearchResult: components["schemas"]["Recording"] & {
             project_name?: string | null;
             creator_name?: string | null;
+            /** @description The author's picture: a same-origin path or external URL; null means render an initials disc */
+            creator_image?: string | null;
+            /** @description Whether the result's project works with clients (with visible_to_clients, the shared-with-clients mark); null for a result with no project, and for a client caller */
+            project_clients_enabled?: boolean | null;
             parent_title?: string | null;
+            /** @description The parent's type, so a file attached to a post opens the post and one attached to a comment opens the comment's thread; absent on a result with no parent */
+            parent_type?: components["schemas"]["RecordingType"];
+            /**
+             * Format: uuid
+             * @description The parent's own parent: a comment's thread
+             */
+            parent_parent_id?: string | null;
             byte_size?: number | null;
             content_type?: string | null;
             /** @description Tag-stripped text, matches wrapped in <em> */
@@ -4183,7 +5512,7 @@ export interface components {
             /** Format: date */
             ends_on?: string | null;
             show_activity?: boolean;
-            /** @description GET and PATCH /projects/{projectId} only, and never for clients: the project's Timesheet switch (off by default). On the /templates routes: the switch every project started from the template begins with */
+            /** @description Never for clients: the project's Timesheet switch (off by default), on GET and PATCH /projects/{projectId} and on every row of GET /projects (each of its forms). On the /templates routes: the switch every project started from the template begins with */
             timesheet_enabled?: boolean;
             /** @description /templates routes only: whether projects started from the template begin with Project health on. A project's own gauge is GET /projects/{projectId}/health */
             health_enabled?: boolean;
@@ -4194,7 +5523,7 @@ export interface components {
              * @description The membership that made the project, or null once that membership no longer exists. The creator, admins and owners may change `all_access` and archive, trash or restore the project
              */
             creator_id?: string | null;
-            /** @description Default listing only */
+            /** @description Your own star: the default listing and GET /projects/{projectId} only */
             starred?: boolean;
             /** @description ?scope=all (owner) only */
             joined?: boolean;
@@ -4202,6 +5531,16 @@ export interface components {
             members?: components["schemas"]["ProjectMember"][];
             /** @description ?include=members only; total active project members before the five-avatar cap */
             member_count?: number;
+            /**
+             * Format: date-time
+             * @description ?include=members only: when you last opened the project, or null if never (POST /projects/{projectId}/visits). Home's lineup is your folders, the first 40 starred projects in the listing's order, then the 10 most recently visited projects that are neither starred nor filed in a folder
+             */
+            visited_at?: string | null;
+            /**
+             * Format: date-time
+             * @description A trashed project's deletion date: it is deleted for good after this; null unless trashed
+             */
+            purge_after?: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -4224,9 +5563,46 @@ export interface components {
             primary: boolean;
             /** @description The container's own client flag. Chat and Boards share as a whole (PUT /recordings/{container_id}/visibility cascades to every line, column and card); clients never receive an unshared Chat or board in their tool list and cannot open it */
             visible_to_clients?: boolean;
+            /** @description GET /projects/{projectId} only: the project's summary of the instance, as its cover tile draws it, read with your visibility. Null for a switched-off instance and on every other read. */
+            summary?: {
+                /** @description The counts in order ("18 of 31 done", "4 lists", "2 overdue"; "Nothing here yet" when empty), one line joined with a separator */
+                parts: {
+                    text: string;
+                    /**
+                     * @description An overdue count reads negative, waiting approvals caution; null for the rest
+                     * @enum {string|null}
+                     */
+                    tone: "negative" | "caution" | null;
+                }[];
+                /** @description The latest item's byline ("Luis Moreno: The proofs are in."); null with nothing yet */
+                latest: {
+                    name: string | null;
+                    image: string | null;
+                    /** @description The item's title, a chat line's text, an answer's first line; empty for a chat line */
+                    title: string;
+                    /** Format: date-time */
+                    at: string;
+                } | null;
+            } | null;
         };
         ProjectDetail: components["schemas"]["Project"] & {
             tools: components["schemas"]["ToolEntry"][];
+            permissions?: components["schemas"]["ProjectPermissions"];
+            /** @description GET /projects/{projectId} only, for the team: the project timesheet's total in hundredths of an hour, every counted entry on the project and its items; null while its Timesheet is off */
+            timesheet_hundredths?: number | null;
+            /** @description GET /projects/{projectId} only, for the team: the overtime among `timesheet_hundredths`; null while its Timesheet is off */
+            timesheet_overtime_hundredths?: number | null;
+        };
+        /** @description What you may do to a project or template as a whole, each answered exactly as its write decides, so a client leaves out what you may not use rather than offering it to be refused. */
+        ProjectPermissions: {
+            /** @description Change its name, description, dates, settings and tools: never a client, and while "Restrict who can edit project details" is on only admins, owners and its creator */
+            edit_details: boolean;
+            /** @description Add or remove others: never a client or an outside collaborator; while "Restrict who can edit people on a project" is on, an invite-only project's admins, owners and creator only. Removing yourself is POST /projects/{projectId}/leave, everyone's own */
+            change_people: boolean;
+            /** @description Switch it between open to everyone and invite-only (`all_access`): admins, owners and its creator, never a client or an outside collaborator */
+            change_access: boolean;
+            /** @description Archive, trash or restore it (PUT /projects/{projectId}/status/{status}): admins, owners and its creator */
+            archive: boolean;
         };
         OrganizationSummary: {
             /** Format: uuid */
@@ -4264,6 +5640,8 @@ export interface components {
                  * @enum {string}
                  */
                 membership_kind: "person" | "agent";
+                /** @description The organization's trial ended and it is paused until an owner buys a plan on the web. Its routes answer 403 account_inactive, except GET /account; show it as paused rather than removing it. */
+                frozen: boolean;
             })[];
             /** @enum {string} */
             scope: "read" | "full";
@@ -4417,9 +5795,10 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
-        /** @description The version policy for each native app. Android joins when it ships. */
+        /** @description The version policy for each native app. */
         ClientVersions: {
             ios: components["schemas"]["ClientVersion"];
+            android: components["schemas"]["ClientVersion"];
         };
         ClientVersion: {
             /**
@@ -4438,6 +5817,16 @@ export interface components {
              * @example https://apps.apple.com/app/id6792548145
              */
             store_url: string;
+        };
+        SignupPolicy: {
+            /** @description The Terms of Service in force, named by its last-updated date (`2026-09-08`). */
+            terms_version: string;
+            /** @description The Privacy Policy in force, named by its last-updated date. */
+            privacy_version: string;
+            /** Format: uri */
+            terms_url: string;
+            /** Format: uri */
+            privacy_url: string;
         };
         /** @description How a series repeats. `time_zone` anchors the series' wall clock across DST and fixes the calendar days `exdates`, `until`, and `occurrence_key` are read in. */
         CalendarRecurrence: {
@@ -4502,6 +5891,28 @@ export interface components {
             /** @description Shared with the project's client (the team's calendar marks it) */
             visible_to_clients?: boolean;
         };
+        /** @description A calendar you can put an event in (`GET /calendar/calendars`). */
+        EventCalendar: {
+            /**
+             * Format: uuid
+             * @description null: the account calendar
+             */
+            project_id: string | null;
+            /**
+             * Format: uuid
+             * @description The Calendar tool's `container_id`; null for an account calendar that holds no event yet
+             */
+            calendar_id: string | null;
+            /** @description The Calendar's name after renames; the account calendar's own name */
+            label: string;
+            project_name: string | null;
+            /** @description The project's color preset */
+            color: string | null;
+            /** @description The project's first Calendar, what `project_id` alone means */
+            primary: boolean;
+            /** @description You starred the project */
+            starred: boolean;
+        };
         CalendarFeed: {
             /** Format: uuid */
             id: string;
@@ -4539,13 +5950,14 @@ export interface components {
             /** @description true when no clock time was named */
             all_day: boolean | null;
         };
+        /** @description A private chat as your conversations list it */
         DmSummary: {
             /**
              * Format: uuid
              * @description The dm recording
              */
             id: string;
-            /** @description Group-chat name (PATCH /recordings/{id} renames); null: render the participant names */
+            /** @description Group-chat name (PATCH /chats/{dmId} renames); null: render the participant names */
             title: string | null;
             /** @enum {string} */
             status: "active" | "archived";
@@ -4554,17 +5966,34 @@ export interface components {
              * @description Group-chat cover image: an upload posted in the chat
              */
             cover_upload_id: string | null;
+            /** @description The people in it, you left out (a chat with yourself has none) */
             participants: {
                 /** Format: uuid */
                 membership_id: string;
                 name: string | null;
+                /** @description Same-origin avatar path, or null */
+                image: string | null;
+                /** @enum {string} */
+                kind: "person" | "agent";
+                /** @description The IANA zone the person pinned, or null; a one-to-one shows their local time from it */
+                time_zone: string | null;
             }[];
             last_line: {
                 /** @description Plain-text preview of the newest line */
                 preview: string;
                 /** Format: date-time */
                 created_at: string;
+                /**
+                 * Format: uuid
+                 * @description Who wrote the newest line (your own id for yours)
+                 */
+                creator_id: string | null;
+                creator_name: string | null;
             } | null;
+            /** @description Your unread lines in it, bundled notifications counted line by line; POST /recordings/{recordingId}/lines/read reads them */
+            unread_count: number;
+            /** @description Someone in it, you included, is in a company whose private chats are off: it stays readable and takes no new lines or files */
+            frozen: boolean;
             /** Format: date-time */
             updated_at: string;
         };
@@ -4606,12 +6035,43 @@ export interface components {
             recording_id?: string | null;
             recording_type?: string | null;
             recording_title?: string | null;
+            /**
+             * Format: uuid
+             * @description What the item sits in: its list, column, folder or tool, or the to-do a subtask sits under. An entry about no item has none
+             */
+            recording_parent_id?: string | null;
+            /** @description That parent's title */
+            recording_parent_title?: string | null;
+            /** @description That parent's type */
+            recording_parent_type?: string | null;
             /** @description Plain-text excerpt of the content involved */
             excerpt?: string | null;
+            /** @description An upload's file type, null for anything else: an image (`image/…`) shows its thumbnail from GET /uploads/{recording_id}/file */
+            content_type?: string | null;
+            /** @description Whether the entry's project works with clients; null for a client asking */
+            project_clients_enabled?: boolean | null;
+            /** @description The project's client company label, null until named; null for a client asking */
+            project_client_company_name?: string | null;
+            /** @description Whether the entry's item is shared with the project's clients; null where the project doesn't work with clients, where the entry is about no item, and for a client asking */
+            visible_to_clients?: boolean | null;
             /** @description "person" or "agent", the actor's membership kind */
             actor_kind?: string | null;
             /** @description "mcp" or "api" when what the event is about was written through a connected app or token; null for a person's own work in Thicket */
             authored_via?: string | null;
+            /** @description The connected app's name when the token or MCP session that wrote it names one (the byline's "via Print Desk"); null for a bare token and for a person's own work */
+            authored_via_client?: string | null;
+        };
+        /** @description Where a day of a repeating event now lives (`GET /calendar/{eventId}/occurrences/{date}`). */
+        OccurrenceLookup: {
+            /** @description What holds the day: the piece that took it, else the series */
+            recording: components["schemas"]["Recording"];
+            /** @description The day left the series for a piece of its own (changed on its own, deleted, or taken by a deleted "all future" part) */
+            split: boolean;
+            /**
+             * Format: date
+             * @description The day to open when `recording` repeats; null when nothing holds the day
+             */
+            occurrence: string | null;
         };
         /** @description A dated row of the upcoming report; assignable rows extend it. */
         UpcomingReportEvent: {
@@ -4650,17 +6110,27 @@ export interface components {
             /** Format: uuid */
             project_id: string;
             project_name: string;
-            /** @enum {string} */
-            status: "on_track" | "some_risk" | "concerned";
-            /** @description Needle position, 0 to 100 */
+            /**
+             * @description How it's going; null for a gauge with no reading yet (include_unset)
+             * @enum {string|null}
+             */
+            status: "on_track" | "some_risk" | "concerned" | null;
+            /** @description The gauge's position, 0 to 100 */
             position: number | null;
             /**
              * Format: date-time
-             * @description When the needle last moved
+             * @description When the gauge last moved
              */
             updated_at: string | null;
             /** @description Who last moved it */
             updated_by: string | null;
+            /**
+             * Format: uuid
+             * @description The latest update, a health_update recording; null with none
+             */
+            latest_update_id: string | null;
+            /** @description The latest update's note, its first line as text; null with none or no note */
+            latest_note: string | null;
         };
         ReportAssignee: {
             /** Format: uuid */
@@ -4736,21 +6206,341 @@ export interface components {
             recording_title?: string | null;
             /** @description Plain-text excerpt of the content involved */
             excerpt?: string | null;
+            /** @description An upload's file type, null for anything else: an image (`image/…`) shows its thumbnail from GET /uploads/{recording_id}/file */
+            content_type?: string | null;
             /** @description "person" or "agent", the actor's membership kind */
             actor_kind?: string | null;
             /** @description "mcp" or "api" when what the event is about was written through a connected app or token; null for a person's own work in Thicket */
             authored_via?: string | null;
+            /** @description The connected app's name when the token or MCP session that wrote it names one (the byline's "via Print Desk"); null for a bare token and for a person's own work */
+            authored_via_client?: string | null;
             /**
              * Format: uuid
              * @description The container the recording sits in
              */
             recording_parent_id?: string | null;
         };
+        EverythingRow: {
+            /** Format: uuid */
+            id: string;
+            /** @description message, comment, document, upload or answer */
+            type: string;
+            title: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: uuid
+             * @description null for a file in a private chat
+             */
+            project_id: string | null;
+            project_name: string | null;
+            /** Format: uuid */
+            parent_id?: string | null;
+            /** @description A comment's thread, an answer's question, an attachment's post */
+            parent_title?: string | null;
+            parent_type?: string | null;
+            /** Format: uuid */
+            creator_id?: string | null;
+            creator_name: string | null;
+            creator_image?: string | null;
+            /** @description Plain text, at most 240 characters */
+            excerpt: string | null;
+            /** Format: int64 */
+            byte_size?: number | null;
+            content_type?: string | null;
+            /**
+             * Format: uuid
+             * @description A message's category
+             */
+            category_id?: string | null;
+            /**
+             * Format: date
+             * @description The day an answer is for
+             */
+            starts_on?: string | null;
+            /** @description A message's, document's or file's active comments; 0 for the rest */
+            comment_count: number;
+            /** @description Whether the row's project works with clients; null for a row with no project, and for a client caller */
+            project_clients_enabled: boolean | null;
+            /** @description Whether the item is shared with the project's clients (the team's shared mark); null where the project doesn't work with clients, and for a client caller */
+            visible_to_clients: boolean | null;
+            /** @description A document's or file's chosen color, for its dot; null for the rest and for white */
+            color: string | null;
+        };
+        WorkReportItem: components["schemas"]["Recording"] & {
+            project_name: string;
+            /** @description Its list, column, or a step's card */
+            parent_title?: string | null;
+            parent_type?: string | null;
+            /** @description A card's board */
+            board_title?: string | null;
+            assignees: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string | null;
+                image?: string | null;
+            }[];
+        };
+        UnassignedReportItem: components["schemas"]["Recording"] & {
+            project_name: string;
+            parent_title?: string | null;
+            parent_type?: string | null;
+        };
+        TaskLogItem: components["schemas"]["Recording"] & {
+            project_name: string;
+            /** Format: uuid */
+            parent_id?: string | null;
+            parent_title?: string | null;
+            parent_type?: string | null;
+            /** @description Who added it, or who completed it */
+            actor: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string | null;
+                image?: string | null;
+            } | null;
+        };
+        RoadmapReportProject: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description?: string | null;
+            client_company_name?: string | null;
+            color: string | null;
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on: string;
+            people: {
+                name: string | null;
+                image?: string | null;
+            }[];
+            /** @description Whether the caller may change the project's dates (its details) */
+            can_edit_dates: boolean;
+        };
+        ProgressOverviewChart: {
+            /** Format: uuid */
+            project_id: string;
+            project_name: string;
+            /**
+             * Format: uuid
+             * @description The To-dos tool the chart belongs to
+             */
+            todos_id: string;
+            /** Format: date-time */
+            updated_at: string;
+            updated_by: string | null;
+            lists: {
+                /** Format: uuid */
+                id: string;
+                title: string | null;
+                position: number;
+                color: string;
+            }[];
+        };
+        ChatLines: {
+            /** @description Oldest first */
+            lines: components["schemas"]["ChatLine"][];
+            /** @description Older lines remain before this page (a `before` or newest read) */
+            has_more: boolean;
+        };
+        ChatLine: {
+            /** Format: uuid */
+            id: string;
+            /** @description The line's sanitized rich text */
+            content_html: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Its author edited it after posting */
+            edited: boolean;
+            creator: {
+                /** Format: uuid */
+                membership_id: string | null;
+                name: string | null;
+                /** @description Same-origin avatar path, or null */
+                image: string | null;
+                /** @enum {string|null} */
+                kind: "person" | "agent" | null;
+            };
+            /** @description The app or token it was written through, when not a person's own hand */
+            via: string | null;
+            /** @description The line it replies to, as quoted when it posted */
+            reply_to: {
+                /** Format: uuid */
+                id: string | null;
+                author: string;
+                /** @description Its opening words, up to 200 characters */
+                excerpt: string;
+            } | null;
+            link_preview: {
+                url: string;
+                title: string;
+                description: string | null;
+                site_name: string | null;
+                /** @description The page's og:image as an absolute https URL, for a card's picture; the web never loads it (its CSP), a native client may. Null when the page names none */
+                image: string | null;
+            } | null;
+            cheers: components["schemas"]["InlineCheer"][];
+            /** @description The files it posts, images first; each downloads at `GET /uploads/{id}/download` */
+            files: {
+                /** Format: uuid */
+                id: string;
+                filename: string;
+                /** Format: int64 */
+                byte_size: number;
+                content_type: string;
+                /** @description A voice note's length in milliseconds, as declared when it was recorded; null without one */
+                duration_ms: number | null;
+            }[];
+            /** @description Opaque: `before` or `after` this line */
+            cursor: string;
+            /** @description What you may do to it, as the writes decide: only its author edits; its author, an owner or an admin deletes. Neither while the chat is shut: a private chat once archived or while frozen, a room while its project is archived or in the trash (the writes are 403 then) */
+            permissions: {
+                /** @description Edit its words (`PATCH /recordings/{id}`) */
+                edit: boolean;
+                /** @description Delete it for good (`DELETE /recordings/{id}`) */
+                delete: boolean;
+                /**
+                 * Format: date-time
+                 * @description With Admin › Permissions limiting edits, when your own line stops taking either; null when no limit holds you
+                 */
+                window_closes_at: string | null;
+            };
+        };
+        ChatPeople: {
+            /** @description Your company, while its private chats are off; null when you may chat */
+            restriction: {
+                company_name: string;
+                /** @description The people in it, you included */
+                member_count: number;
+            } | null;
+            people: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string;
+                image: string | null;
+                title: string | null;
+                role: components["schemas"]["OrgRole"];
+                /** @description False for an outside collaborator or a client */
+                employee: boolean;
+                /** @enum {string} */
+                kind: "person" | "agent";
+            }[];
+        };
+        /** @description A to-do list template: a to-do list in the account's hidden library. */
+        ListTemplate: {
+            /** Format: uuid */
+            id: string;
+            title: string | null;
+            description: string | null;
+            /** @enum {string} */
+            status: "active" | "archived";
+            /** Format: uuid */
+            creator_id: string | null;
+            /** @description Whether you may archive it or move it to the trash: admins always; otherwise everyone, or under the content restriction only its creator until someone else comments */
+            can_archive: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        JoinInvitation: {
+            /** @enum {string} */
+            state: "unavailable" | "invalid" | "accepted" | "declined" | "expired" | "open";
+            /** @description The workspace; null when nothing may be named */
+            organization: {
+                name: string;
+                /** @description The workspace's logo path; omitted when it has none */
+                logo?: string;
+                /**
+                 * Format: uuid
+                 * @description Only for someone already in the workspace
+                 */
+                id?: string;
+                /** @description Only for someone already in the workspace */
+                slug?: string;
+            } | null;
+            inviter: {
+                name: string;
+            } | null;
+            /** @description The invited address */
+            email: string | null;
+            /** @description The invitee's name as the inviter gave it, for a new account's form to start from */
+            name: string | null;
+            has_account: boolean;
+            signed_in_as: string | null;
+            member: boolean;
+        };
+        JoinInviteLink: {
+            /** @enum {string} */
+            state: "unavailable" | "invalid" | "off" | "open";
+            /** @description The workspace; null when nothing may be named */
+            organization: {
+                name: string;
+                /** @description The workspace's logo path; omitted when it has none */
+                logo?: string;
+                /**
+                 * Format: uuid
+                 * @description Only for someone already in the workspace
+                 */
+                id?: string;
+                /** @description Only for someone already in the workspace */
+                slug?: string;
+            } | null;
+            signed_in_as: string | null;
+            member: boolean;
+        };
+        JoinedOrganization: {
+            organization: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                slug: string;
+            };
+        };
+        JoinDecline: {
+            /** @enum {string} */
+            state: "declined" | "already_declined";
+        };
+        /** @description The Terms of Service and Privacy Policy accepted, by the versions `GET /signup-policy` reports */
+        JoinLegalAcceptance: {
+            accepted: boolean;
+            terms_version: string;
+            privacy_version: string;
+        };
+        JoinInvitationAccount: {
+            /** @description Up to 200 characters, no link */
+            name: string;
+            password: string;
+            legal_acceptance: components["schemas"]["JoinLegalAcceptance"];
+        };
+        JoinInviteLinkAccount: {
+            /** @description Up to 200 characters, no link */
+            name: string;
+            /** Format: email */
+            email: string;
+            password: string;
+            legal_acceptance: components["schemas"]["JoinLegalAcceptance"];
+        };
+        EmailStatus: {
+            /**
+             * @description `ok` while Thicket emails you. `bouncing`: your address stopped accepting mail; change it in My settings. `paused`: your email provider reported a Thicket email as junk, so Thicket stopped emailing you.
+             * @enum {string}
+             */
+            state: "ok" | "bouncing" | "paused";
+            /** @description True while email is paused and you can turn it back on yourself with POST /me/email/resume. Once per address: a later pause is lifted by support. */
+            can_resume: boolean;
+            /**
+             * Format: date-time
+             * @description When email was paused; null unless `state` is `paused`.
+             */
+            paused_since: string | null;
+        };
         /**
-         * @description The push token's transport: `apns` (Apple's service directly, the native iOS app). `fcm` joins with the Android app.
+         * @description The push token's transport: `apns` (Apple's service directly, the native iOS app) or `fcm` (Firebase Cloud Messaging directly, the native Android app).
          * @enum {string}
          */
-        PushTokenKind: "apns";
+        PushTokenKind: "apns" | "fcm";
         /** @description Your private scratchpad: a `personal_note` recording with no project, no parent and no title, one per person, created empty on first read. `meta` is always null here; the restore point's body stays server-side. */
         MyNote: components["schemas"]["Recording"] & {
             /** @description The restore point: the pad as it stood when the current sitting began, moved forward by any save that discards most of the pad. Null until there is something to go back to. */
@@ -4760,6 +6550,8 @@ export interface components {
                  * @description When the restorable version was last saved
                  */
                 saved_at: string;
+                /** @description The restorable version's text, sanitized HTML, so a page can show what Restore brings back */
+                content_html: string | null;
             } | null;
         };
         MyNoteSave: {
@@ -4776,6 +6568,14 @@ export interface components {
         AssignmentRow: components["schemas"]["Recording"] & {
             project_name?: string | null;
             parent_title?: string | null;
+            /** @description Everyone assigned, you included, in assignment order (the others' marks beside yours); [] on a completed row's children */
+            assignees: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string | null;
+                /** @description Same-origin avatar path, or null */
+                image?: string | null;
+            }[];
         };
         GroupedAssignment: components["schemas"]["AssignmentRow"] & {
             /** @description Card steps normalized under their parent card */
@@ -4792,6 +6592,11 @@ export interface components {
             /** Format: uuid */
             priority_id: string;
         };
+        AssignedByMeRow: components["schemas"]["AssignmentRow"] & {
+            /** @description Who it is assigned to (one row per assignee) */
+            assignee_name: string;
+            assignee_image?: string | null;
+        };
         BookmarkRow: {
             /** Format: uuid */
             recording_id: string;
@@ -4799,8 +6604,31 @@ export interface components {
             title?: string | null;
             /** Format: uuid */
             project_id?: string | null;
+            /** @description The project's name whatever its state */
+            project_name?: string | null;
             /** Format: uuid */
             parent_id?: string | null;
+            /** @description Effective: a trashed or archived project's state wins over the item's own */
+            status: components["schemas"]["RecordingStatus"];
+            /**
+             * @description The project's own state, so "Project in the trash" reads apart from "In the trash"; null for an item outside projects
+             * @enum {string|null}
+             */
+            project_status: "active" | "archived" | "trashed" | null;
+            /** @description The project's chosen color, for its swatch */
+            project_color: string | null;
+            /** @description Who made the item */
+            creator_name: string | null;
+            /**
+             * Format: date-time
+             * @description When a to-do, card or step was completed; null while open or for the rest
+             */
+            completed_at: string | null;
+            /**
+             * Format: date-time
+             * @description When it went to the trash, the project's when the project took it there; the day it is deleted for good is 30 days on
+             */
+            trashed_at: string | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -4827,19 +6655,43 @@ export interface components {
             /** Format: uuid */
             project_id?: string | null;
             project_name?: string | null;
+            /** @description The cheerer's picture: a same-origin path or external URL; null means render an initials disc */
+            cheerer_image?: string | null;
+            /** @description Who made the cheered thing ("On Priya's message") */
+            author_name?: string | null;
+            /** @description A cheer on a change someone made ("For completing …"): the change's action (completed, and the rest of the event vocabulary); null for a cheer on the item itself */
+            event_action?: string | null;
+            /**
+             * Format: uuid
+             * @description Who made that change, when the cheer is on one
+             */
+            event_actor_id?: string | null;
         };
         DoTodayItem: {
             /** Format: uuid */
             id: string;
             /** @enum {string} */
             kind: "event" | "task";
+            /** @description `calendar_event` for an event; `todo`, `card` or `step` for a task */
+            type: components["schemas"]["RecordingType"];
             title?: string | null;
             /** Format: date-time */
             start: string;
+            /** Format: date-time */
+            end?: string | null;
             all_day: boolean;
             /** Format: uuid */
             project_id?: string | null;
             project_name?: string | null;
+            /** Format: uuid */
+            parent_id?: string | null;
+            circled: boolean;
+            /** @description An event's join link, when set */
+            link?: string | null;
+            /** @description One occurrence of a repeating event */
+            recurring: boolean;
+            /** @description A repeating event's occurrence, as `?occurrence=` names it; null otherwise */
+            occurrence_key?: string | null;
         };
         MyEventRow: {
             /** Format: uuid */
@@ -4859,6 +6711,10 @@ export interface components {
             /** @description The event's join link, when set */
             link?: string | null;
             circled: boolean;
+            /** @description One occurrence of a repeating event */
+            recurring: boolean;
+            /** @description A repeating event's occurrence, as `?occurrence=` names it; null otherwise */
+            occurrence_key?: string | null;
         };
         NotificationRow: {
             /** Format: uuid */
@@ -4875,6 +6731,8 @@ export interface components {
             recording_id?: string | null;
             /** Format: uuid */
             project_id?: string | null;
+            /** @description The row's project, null for a row with no project */
+            project_name?: string | null;
             /**
              * Format: uuid
              * @description Platform announcements (action announced): open GET /api/v1/{orgSlug}/bulletins/{bulletin_id}
@@ -4892,6 +6750,20 @@ export interface components {
             timesheet_week_start?: string | null;
             /** @description null for actor-less rows (announcements, reminders) */
             actor_name?: string | null;
+            /** @description The actor's picture: a same-origin path or external URL; null for actor-less rows and for an actor without one (render an initials disc) */
+            actor_image?: string | null;
+            /**
+             * @description A reminder's kind (action reminder): an event's day before, hour before, starting soon or day of; a dated to-do's or card's due tomorrow, due today, overdue by a day or overdue by a week. null otherwise
+             * @enum {string|null}
+             */
+            reminder_kind?: "day-before" | "hour-before" | "starting-soon" | "day-of" | "due-tomorrow" | "due-today" | "still-due" | "overdue-week" | null;
+            /**
+             * Format: date-time
+             * @description The moment a reminder is about: a timed event occurrence's start, or UTC midnight of an all-day event's day or a due date (a floating date). null otherwise
+             */
+            occurrence_at?: string | null;
+            /** @description A starting-soon reminder's call link: its event's link as it stands when the row is read, http or https only. null for every other row and for an event without one */
+            join_url?: string | null;
             /** @description The notified-about recording's type */
             recording_type?: string | null;
             /** Format: uuid */
@@ -4927,8 +6799,27 @@ export interface components {
             has_password: boolean;
             /** @description Google, Apple, Google or Apple, or null */
             sign_in_label: string | null;
+            /** @description One row per linked sign-in provider, in first-linked order (the password is `has_password`) */
+            sign_in_methods: {
+                /** @description google, apple */
+                id: string;
+                name: string;
+            }[];
+            /** @description The organizations that require two-factor of you, by name; turning it off is refused while any does */
+            two_factor_required_by: string[];
         };
-        /** @description The user's personal preferences, one document across organizations. Field families: locale and display (timezone: a valid IANA zone, time_format 12h|24h, week_start sunday…saturday, theme light|dark|system, background_tint); notification routing (notify_scope everything|mentions: on mentions only direct actions like mentions, assignments, pings, and approvals are emailed or pushed, while everything else still lands in the tray, unread, whatever a project bell or a followed thread says; email_notifications gates email copies; notifications_silenced is the in-app "Shhh" mute with the badge hidden; desktop_notifications; unread_badge for the "(N)" tab title); quiet hours (work_hours_enabled plus work_hours as per-day {start, end} HH:MM windows or null; catch_up_summary opts into one end-of-day summary of held email); email channels (notify_event_reminders, notify_assignment_reminders for due-soon reminders, weekly_assignments_email for the Monday summary, announcement_emails, onboarding_emails, notify_cheers, activity_digest); profile extras (out_of_office_start/out_of_office_end ISO dates, location, current_status); view choices (todos_view list|cards, docs_folders_open). GET returns every field; PATCH accepts any subset. */
+        MyProfile: {
+            name: string;
+            email: string;
+            email_verified: boolean;
+            image: string | null;
+            /**
+             * @description Where the change's one email went: the previous address was told (`previous_address`), or the new address got the confirmation link (`new_address`); null when the address did not change
+             * @enum {string|null}
+             */
+            email_notice: "previous_address" | "new_address" | null;
+        };
+        /** @description The user's personal preferences, one document across organizations. Field families: locale and display (timezone: a valid IANA zone, time_format 12h|24h, week_start sunday…saturday, theme light|dark|system, background_tint); notification routing (notify_scope everything|mentions: on mentions only direct actions like mentions, assignments, private chats, and approvals are emailed or pushed, while everything else still lands in the tray, unread, whatever a project bell or a followed thread says; email_notifications gates email copies; notifications_silenced is the in-app "Shhh" mute with the badge hidden; desktop_notifications; unread_badge for the "(N)" tab title); quiet hours (work_hours_enabled plus work_hours as per-day {start, end} HH:MM windows or null; catch_up_summary opts into one end-of-day summary of held email); email channels (notify_event_reminders, notify_assignment_reminders for due-soon reminders, weekly_assignments_email for the Monday summary, announcement_emails, onboarding_emails, notify_cheers, activity_digest); profile extras (out_of_office_start/out_of_office_end ISO dates, location, current_status); view choices (todos_view list|cards, docs_folders_open); Home's one-time notes (orientation_dismissed for the orientation note, invite_tip_dismissed for the invite tip: GET says whether each was dismissed, PATCH takes `true` to dismiss it for good, never undone). GET returns every field; PATCH accepts any subset. */
         Preferences: Record<string, never>;
         /**
          * @description Owner and admin administer the org; members are the team (an outside collaborator is a member with `employee` false); clients see only client-visible recordings in clients-enabled projects they were added to.
@@ -4955,6 +6846,8 @@ export interface components {
             requires_two_factor_setup: boolean;
             /** @description This organization is in the named-agents pilot (Admin › Manage agents and My settings › My agent). A UI pilot while some organizations have it; owners and admins manage agents where it is true. The `/agents` routes answer either way. */
             agent_management: boolean;
+            /** @description The organization's trial ended and it is paused until an owner buys a plan on the web. Its routes answer 403 account_inactive, except GET /account; show it as paused rather than removing it. */
+            frozen: boolean;
         };
         CancelledOrg: {
             /** Format: uuid */
@@ -5001,7 +6894,7 @@ export interface components {
             title?: string | null;
             /**
              * Format: uuid
-             * @description The person's company. An owner, admin or member who isn't an outside collaborator is always in the account's primary company (`is_primary` on `GET /companies`); a collaborator's or a client's may be any other company, or null. An agent's is null.
+             * @description The person's company. An owner, admin or member who isn't an outside collaborator is always in the account's primary company (`is_primary` on `GET /companies`); a collaborator's or a client's may be any other company, or null. An agent's is null until an administrator sets one (`PATCH /people/{membershipId}`), any but the primary.
              */
             company_id?: string | null;
             company_name?: string | null;
@@ -5012,8 +6905,24 @@ export interface components {
                 /** Format: date */
                 end_date?: string;
             } | null;
-            /** @description True while the email provider has stopped mailing this address after a hard bounce or a spam complaint. Thicket's notifications to this person are not being delivered until they change their address in My settings. */
+            /** @description The person's own IANA time zone, for their local time on the person card; null when unset. */
+            time_zone?: string | null;
+            /** @description Where the person says they are, as they set it on their profile; null when unset. */
+            location?: string | null;
+            /** @description The person's current status line, as they set it on their profile; null when unset. */
+            current_status?: string | null;
+            /** @description Whether the person has two-factor on. Owners and admins only; absent for everyone else. `DELETE /people/{membershipId}/two_factor` resets it. */
+            two_factor_enabled?: boolean;
+            /**
+             * @deprecated
+             * @description Deprecated: read `email_delivery`. True whenever `email_delivery` is set, for a hard bounce and a junk report alike. Owners and admins only.
+             */
             email_bouncing?: boolean;
+            /**
+             * @description Why Thicket isn't emailing this person, owners and admins only; null while email flows. `bouncing`: the address stopped accepting mail, and a new address fixes it. `paused`: the person's email provider reported a Thicket email as junk. Show the state without that reason, which is the person's alone.
+             * @enum {string|null}
+             */
+            email_delivery?: "bouncing" | "paused" | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -5033,13 +6942,35 @@ export interface components {
             company_id?: string | null;
             /** @description Declined invites stay listed; a resend revives them */
             declined: boolean;
+            /**
+             * Format: date-time
+             * @description When the invitee declined; null otherwise
+             */
+            declined_at: string | null;
+            /** @description The title the invitation gives them */
+            title: string | null;
+            /**
+             * Format: date-time
+             * @description When the invitation lapses: past it the row reads Expired, and Resend revives it
+             */
+            expires_at: string;
+            /**
+             * Format: date-time
+             * @description When the last invitation email left (the original, a reminder or a project follow-up), which starts Resend's hour; null before any was recorded
+             */
+            last_email_at: string | null;
             /** Format: date-time */
             created_at: string;
             /**
-             * @description The delivery ledger's word on the latest invite email
+             * @description The delivery ledger's word on the latest invite email. `queued` while it is being handed to the email provider. `suppressed` whenever the provider has stopped mailing the address, whatever the latest email's status; `email_delivery` says why.
              * @enum {string|null}
              */
-            email_status: "skipped" | "sent" | "delivery_delayed" | "delivered" | "failed" | "bounced" | "complained" | null;
+            email_status: "queued" | "skipped" | "sent" | "delivery_delayed" | "delivered" | "failed" | "bounced" | "complained" | "suppressed" | null;
+            /**
+             * @description Why Thicket isn't emailing this address, set whenever `email_status` is `suppressed`; null while email flows. `bouncing`: the address stopped accepting mail. `paused`: the invitee's email provider reported a Thicket email as junk. Show the state without that reason, as for `Person.email_delivery`.
+             * @enum {string|null}
+             */
+            email_delivery?: "bouncing" | "paused" | null;
             /**
              * Format: uri
              * @description The same link the email button carries, for sharing over another channel
@@ -5063,6 +6994,8 @@ export interface components {
         AccessProject: {
             /** Format: uuid */
             id: string;
+            /** @description The project's chosen color, for the row's dot */
+            color: string | null;
             name: string;
             /** @enum {string} */
             status: "active" | "archived";
@@ -5122,6 +7055,15 @@ export interface components {
             /** Format: uuid */
             recording_id?: string | null;
             recording_type?: string | null;
+            /**
+             * Format: uuid
+             * @description What the item sits in: its list, column, folder or tool, or the to-do a subtask sits under. An entry about no item has none
+             */
+            recording_parent_id?: string | null;
+            /** @description That parent's title */
+            recording_parent_title?: string | null;
+            /** @description That parent's type */
+            recording_parent_type?: string | null;
             recording_title?: string | null;
             /** @description Plain-text content excerpt */
             excerpt?: string | null;
@@ -5136,6 +7078,10 @@ export interface components {
             /** @description Members drop from chat pickers, can't start DMs, and existing conversations freeze read-only */
             dms_disabled: boolean;
             member_count: number;
+            /** @description The owners and admins in the company besides you (the Permissions page's cue before private chats are switched off) */
+            admin_count: number;
+            /** @description You are in this company */
+            includes_viewer: boolean;
             /** Format: date-time */
             created_at: string;
         };
@@ -5167,6 +7113,10 @@ export interface components {
             private_chat_history_retention_days: number | null;
             /** @description Per-tool display-name overrides, keyed by tool (message_board, todos, folder, calendar, board, chat, check_ins, clients) */
             tool_names: {
+                [key: string]: string;
+            };
+            /** @description The built-in name of each tool, keyed as `tool_names` is: the name a tool takes where neither the organization nor its project renames it */
+            tool_defaults?: {
                 [key: string]: string;
             };
             voice_notes_enabled: boolean;
@@ -5202,6 +7152,8 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             owner_names: string[];
+            /** @description The trial ended and the organization is paused until an owner buys a plan on the web. Every other route answers 403 account_inactive, and the `limits` are all false while it is. */
+            frozen: boolean;
             plan: {
                 /** @enum {string} */
                 tier: "free" | "starter" | "pro" | "comped";
@@ -5213,6 +7165,7 @@ export interface components {
                 project_limit: number | null;
                 /** @description One pool for members and guests alike, clients included; null means unlimited */
                 people_limit: number | null;
+                /** Format: int64 */
                 storage_limit_bytes: number;
             };
             limits: {
@@ -5230,18 +7183,27 @@ export interface components {
             };
         };
         StorageUsage: {
+            /** Format: int64 */
             total_bytes: number;
             file_count: number;
+            /** Format: int64 */
             limit_bytes: number;
             /** @description The largest files; private-chat and unposted-draft uploads count toward usage but are not listed */
             largest: {
                 /** Format: uuid */
                 recording_id: string;
                 filename: string | null;
+                /** Format: int64 */
                 byte_size: number;
                 content_type: string | null;
                 /** Format: uuid */
                 project_id?: string | null;
+                project_name?: string | null;
+                /**
+                 * @description The file's project's own state ("Project archived"), beside the file's `status`
+                 * @enum {string|null}
+                 */
+                project_status?: "active" | "archived" | "trashed" | null;
                 status?: components["schemas"]["RecordingStatus"];
                 /** Format: date-time */
                 created_at: string;
@@ -5285,6 +7247,11 @@ export interface components {
             excerpt: string;
             /** Format: date-time */
             published_at: string | null;
+            /**
+             * @description Whom the announcement was sent to: everyone, or owners and admins alone
+             * @enum {string}
+             */
+            audience: "everyone" | "owners_admins";
         };
         Bulletin: {
             /** Format: uuid */
@@ -5344,6 +7311,97 @@ export interface components {
                 count: number;
             }[];
         };
+        /** @description A project the account export can carry: active or archived, joined or not; never a template or the list library. */
+        ExportableProject: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            status: "active" | "archived";
+        };
+        /** @description A private conversation for the owner's private-chats export picker: who is in it, its size and when it was last active. Names and counts only; the lines come from GET /account/export/chats. */
+        ExportableConversation: {
+            /**
+             * Format: uuid
+             * @description The conversation's id, as GET /account/export/chats takes it in `ids`
+             */
+            id: string;
+            /** @description Participants' names, A to Z */
+            participants: string[];
+            line_count: number;
+            /**
+             * Format: date-time
+             * @description The newest line's time; null for a conversation with no lines
+             */
+            last_activity_at: string | null;
+        };
+        /** @description A project template in the account-wide trash. It purges 30 days after `trashed_at`. */
+        TrashedTemplate: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            trashed_at: string;
+        };
+        /** @description What a restore from the account-wide trash brought back, and the token that puts it back. */
+        TrashRestore: {
+            /** @enum {string} */
+            kind: "recording" | "template";
+            /** Format: uuid */
+            id: string;
+            /** @description Rows made live again: the item and what was trashed with it */
+            restored_count: number;
+            /** @description How many of those rows are comments ("and its 3 comments"); 0 for a template */
+            restored_comment_count: number;
+            /** @description Opaque and signed; good for an hour, in this organization, for POST /trash/restores/undo */
+            undo_token: string;
+        };
+        /** @description One archived item on a project's archive page. */
+        ProjectArchiveItem: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["RecordingType"];
+            title: string | null;
+            /** Format: uuid */
+            parent_id: string | null;
+            /** @description The item it sits in: a comment's thread, a to-do's list */
+            parent_title: string | null;
+            /**
+             * @description The tool it lists under; a comment takes its thread's
+             * @enum {string}
+             */
+            tool: "message_board" | "todos" | "folder" | "calendar" | "board" | "chat" | "check_ins" | "clients" | "health" | "other";
+            /** Format: date-time */
+            archived_at: string;
+            /** @description Who archived it; null when the sweep did, or for items archived before this was kept */
+            archived_by_name: string | null;
+            /** @description Archived by Admin › Archiving (completed to-dos and cards, 30 days after completion), not by a person */
+            archived_automatically: boolean;
+            /** @description Shared with the project's clients: the team's shared mark on the row */
+            visible_to_clients?: boolean;
+        };
+        /** @description One tool's share with the project's client. */
+        ClientLensGroup: {
+            /** @enum {string} */
+            key: "messages" | "lists" | "docs" | "events" | "questions" | "chat" | "board";
+            label: string;
+            shared: number;
+            total: number;
+            /** @description The newest shared items, six at most; empty for `chat` and `board` */
+            items: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                /** Format: date-time */
+                created_at: string;
+            }[];
+        };
+        LinkService: {
+            id: string;
+            name: string;
+            prompt: string;
+            placeholder: string;
+        };
         ShareEverythingCounts: {
             messages: number;
             todolists: number;
@@ -5390,6 +7448,15 @@ export interface components {
             /** Format: uuid */
             recording_id?: string | null;
             recording_title?: string | null;
+            /**
+             * Format: uuid
+             * @description What the item sits in: its list, column, folder or tool, or the to-do a subtask sits under. An entry about no item has none
+             */
+            recording_parent_id?: string | null;
+            /** @description That parent's title */
+            recording_parent_title?: string | null;
+            /** @description That parent's type */
+            recording_parent_type?: string | null;
             /** @description A RecordingType value, or null for project-level events */
             recording_type?: string | null;
             /**
@@ -5414,6 +7481,15 @@ export interface components {
                 image: string | null;
                 /** @enum {string} */
                 role: "owner" | "admin" | "member" | "client";
+                /** @description Asked to be notified about the project (their project bell on): the people a post's `notify: "asked"` reaches, and where its chooser starts when any of them has; always false for you, since an author follows their own post */
+                asked: boolean;
+                /** @description Their out-of-office dates whenever set, as on Person; null while off */
+                out_of_office: {
+                    /** Format: date */
+                    start_date?: string;
+                    /** Format: date */
+                    end_date?: string;
+                } | null;
             }[];
             /** @description The account's groups with at least one member the item reaches, each narrowed to those members. Picking a group assigns, invites or mentions exactly `member_ids`. Always empty for a client caller. */
             groups: {
@@ -5438,8 +7514,10 @@ export interface components {
             employee: boolean;
             title?: string | null;
             company_name?: string | null;
+            /** @description Added to the project directly (a roster row of their own): who keeps access when a project open to everyone goes invite-only. True for everyone on an invite-only project */
+            explicit_access?: boolean;
         };
-        /** @description One saved move of the health needle, newest first in the gauge's updates. */
+        /** @description One saved move of the health gauge, newest first in the gauge's updates. */
         HealthUpdate: {
             /**
              * Format: uuid
@@ -5484,6 +7562,13 @@ export interface components {
             trashed_by_name?: string | null;
             /**
              * Format: date-time
+             * @description When the trash sweep deletes it for good, 30 days after its trashing
+             */
+            purge_after?: string;
+            /** @description Shared with the project's clients: the team's shared mark on the row */
+            visible_to_clients?: boolean;
+            /**
+             * Format: date-time
              * @description Calendar events: when the trashed event starts. A deleted day of a repeating event is dated by that day, a deleted "all future" part by its first day
              */
             starts_at?: string | null;
@@ -5504,6 +7589,90 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        /** @description A public link's page (`GET /api/v1/public/{token}`). */
+        PublicLinkPage: {
+            /** @description The organization it is shared from */
+            organization_name: string;
+            /**
+             * @description A message, a document or a file
+             * @enum {string}
+             */
+            type: "message" | "document" | "upload";
+            /** @description Null when untitled */
+            title: string | null;
+            /**
+             * Format: date-time
+             * @description When the item was made
+             */
+            created_at: string;
+            /** @description Sanitized HTML whose embeds point at `/public/{token}/files/{uploadId}` */
+            content: string | null;
+            /** @description The file, for a file's link: its current version */
+            file: {
+                name: string;
+                /** Format: int64 */
+                byte_size: number;
+                content_type: string;
+                /** @description This address, relative to the server's origin, shows it */
+                url: string;
+                /** @description This address, relative to the server's origin, downloads it */
+                download_url: string;
+            } | null;
+        };
+        /** @description What you may do to the item, each as its write decides. Under Admin › Permissions the creator of an item someone else has commented on is refused `archive` and `trash` by the write, so both are false for them here (since 2026-11-06; `move` stays theirs). `trash` on a trashed item is restoring it. */
+        RecordingPermissions: {
+            /** @description Edit its words and fields */
+            edit: boolean;
+            /** @description Archive it, or unarchive it when archived */
+            archive: boolean;
+            /** @description Put it in the trash, or restore it when trashed */
+            trash: boolean;
+            /** @description Move it to another parent (`PUT …/position`) */
+            move: boolean;
+            /** @description Copy it (`POST …/copy`) */
+            copy: boolean;
+            /** @description Make a new public link; turning one off stays open */
+            public_link: boolean;
+            /** @description Close or reopen its comments */
+            close_comments: boolean;
+            /** @description Change who can see it; `GET …/visibility` says whether it is set here or follows another item */
+            visibility: boolean;
+            /** @description Comment on it */
+            comment: boolean;
+            /** @description Cheer it */
+            cheer: boolean;
+        };
+        /** @description A comment's own Edit and Put in the trash for you: offered to its author, and Put in the trash to owners and admins on anyone's. `window_closes_at` is when a member's own comment stops taking either under the 15-minute limit (Admin › Permissions); null when no window applies. */
+        CommentPermissions: {
+            edit: boolean;
+            trash: boolean;
+            /** Format: date-time */
+            window_closes_at: string | null;
+        };
+        /** @description What every composer offers (`GET /api/v1/rich-text`). */
+        RichTextVocabulary: {
+            /** @description A code block's languages in order; `id` is its `language-{id}` class */
+            code_languages: {
+                id: string;
+                label: string;
+            }[];
+            /** @description The named colors text and highlights take, stored as the classes `tc-{name}` and `hl-{name}` */
+            colors: string[];
+            /** @description The quick cheers a cheer offers first */
+            quick_cheers: string[];
+            /** @description A cheer's longest, in characters */
+            cheer_max_length: number;
+            /** @description The services a pasted link may embed from (the "Yes, embed it" offer), in the order they are tried; `POST /embeds` judges each link, and a composer names the offer by the host's service */
+            embed_services: {
+                id: string;
+                /** @description The service's name as shown ("YouTube") */
+                name: string;
+                /** @description The hosts it answers for, a subdomain included ("youtube.com" takes "www.youtube.com") */
+                hosts: string[];
+            }[];
+            /** @description A direct https link ending in .gif embeds as an image too */
+            embed_gif: boolean;
         };
         ClientVisibility: {
             /** Format: uuid */
@@ -5554,6 +7723,8 @@ export interface components {
             filename: string;
             content_type: string | null;
             byte_size: number | null;
+            /** @description A recording's length in milliseconds, as its uploader declared it with the file (a voice note); null without one, which is every file from before 2026-11-06 */
+            duration_ms: number | null;
             previewable: boolean;
             url: string;
             download_url: string;
@@ -5562,12 +7733,64 @@ export interface components {
             /** @description Author byline; survives the person leaving the org */
             creator_name?: string | null;
             creator_image?: string | null;
+            /** @description Who put it in the trash, by name; null outside the trash */
+            trashed_by_name?: string | null;
+            /** @description Who archived it, by name; null outside the archive, and null when the Admin › Archiving sweep did it */
+            archived_by_name?: string | null;
             /** @description Membership ids currently assigned (to-dos, cards, events); [] otherwise */
             assignee_ids?: string[];
             /** @description Every membership @-mentioned in the content, by id: the corroboration fact an agent runtime checks */
             mentioned_membership_ids?: string[];
             /** @description Files embedded in the rich text; always present, [] when none */
             content_attachments: components["schemas"]["RecordingContentAttachment"][];
+            permissions: components["schemas"]["RecordingPermissions"];
+            /** @description Comments, and with them cheers, are closed on the item */
+            comments_closed: boolean;
+            /** @description In your own Bookmarks */
+            bookmarked: boolean;
+            /** @description You are among its subscribers (Notify me) */
+            subscribed: boolean;
+            /** @description Your own Remind me on the item, waiting or returned; null when none */
+            snooze: {
+                /** Format: date-time */
+                resurface_at: string;
+                note: string | null;
+            } | null;
+            /** @description A completed card only: the column Reopen (DELETE …/completion, or a move out of Done) returns it to, the one it was completed from while that is still an active column of its board, else Triage, else the board's first custom column; null for everything else */
+            reopens_to?: {
+                /** Format: uuid */
+                id: string;
+                title: string | null;
+            } | null;
+            /** @description An occurrence of a repeating to-do: the series' live primary, which holds the schedule; null for every other recording, a primary itself, or a series that has stopped */
+            series_primary?: {
+                /** Format: uuid */
+                id: string;
+                title: string | null;
+            } | null;
+            /** @description Check-in questions only, as on a row of `GET /recordings/{recordingId}/questions`: when it asks, as the sweep reads it. Absent for a question without a readable schedule and on every other recording */
+            schedule?: components["schemas"]["CheckInSchedule"];
+            /** @description Check-in questions only: the IANA time zone the schedule's `hour` and `minute` are on; null when `schedule` is absent */
+            time_zone?: string | null;
+            /** @description Check-in questions only: who it asks */
+            askees?: components["schemas"]["CheckInAskee"][];
+            /** @description Check-in questions only: its answers you can see */
+            answer_count?: number;
+            /** @description Check-in questions only: answers in the last 24 hours */
+            recent_answer_count?: number;
+            /**
+             * Format: date-time
+             * @description Check-in questions only: when it next asks, at its hour in `time_zone`; null without a schedule, while paused, and in a template
+             */
+            next_asks_at?: string | null;
+            /** @description Check-in questions only: it has stopped asking everyone */
+            paused?: boolean;
+            /** @description Check-in questions only: you asked it to stop asking you */
+            opted_out?: boolean;
+            /** @description Check-in questions only: the question is in a template, which never asks and takes no answers */
+            template?: boolean;
+            /** @description Check-in questions only: `POST /recordings/{recordingId}/answers` takes your answer, as on the questions listing's rows */
+            answerable?: boolean;
         };
         ChildListRow: components["schemas"]["Recording"] & {
             creator_name?: string | null;
@@ -5575,9 +7798,13 @@ export interface components {
             comment_count?: number;
             /** Format: date-time */
             last_comment_at?: string | null;
+            /** @description Who wrote the latest active comment, by name; null with none */
+            last_commenter_name?: string | null;
+            /** @description A public link is live on it (messages, documents and files; the team's Public mark). Always false for a client */
+            has_public_link?: boolean;
             /** @description chat_message rows only */
             cheers?: components["schemas"]["InlineCheer"][];
-            /** @description client_approval and card rows only */
+            /** @description client_approval, card, todo and step rows only */
             assignees?: {
                 /** Format: uuid */
                 membership_id: string;
@@ -5589,22 +7816,123 @@ export interface components {
             step_count?: number;
             /** @description card rows only: completed steps */
             steps_done?: number;
+            /** @description todo rows only: active subtasks under the to-do */
+            subtask_count?: number;
+            /** @description todo rows only: completed subtasks */
+            subtasks_done?: number;
+            /** @description todo and card rows only: who completed it, by name; null while open */
+            completed_by_name?: string | null;
+            /** @description Who put it in the trash, by name; null outside the trash */
+            trashed_by_name?: string | null;
+            /** @description Who archived it, by name; null outside the archive, and null when the Admin › Archiving sweep did it */
+            archived_by_name?: string | null;
+            /** @description card rows only: parked in its column's On Hold section */
+            on_hold?: boolean;
+            /**
+             * @description column rows only: Triage, Not Now or Done; null for a custom column
+             * @enum {string|null}
+             */
+            role?: "triage" | "not_now" | "done" | null;
+            /** @description column rows only: the column's color from the to-do group palette (`PUT /recordings/{recordingId}/color`); null when none */
+            color?: string | null;
+            /** @description column rows only: whether its On Hold section is on */
+            hold_enabled?: boolean;
+            /** @description GET /recordings/{recordingId}/todo-outline, /board, /children and /message-board rows: what you may do to the row, as the write decides, read once for the page */
+            permissions?: components["schemas"]["RecordingPermissions"];
             /** @description column rows only: active cards in the column (held cards included) */
             card_count?: number;
             /** @description todolist rows only: open to-dos in the list, its groups included */
             todo_open_count?: number;
             /** @description todolist rows only: completed to-dos, groups included */
             todo_done_count?: number;
+            /** @description folder rows only: the active documents, files, linked files and subfolders it holds (what is shared, for a client) */
+            item_count?: number;
             /** @description upload rows only: the current version's size */
             byte_size?: number | null;
+            /** @description upload rows only: a recording's length as its uploader declared it (a voice note); null without one */
+            duration_ms?: number | null;
             /** @description upload rows only: the current version's MIME type */
             content_type?: string | null;
+        };
+        /** @description A To-dos tool or a list in one read: the tool's lists (`lists`), a list's groups (`groups`), and the open to-dos directly inside (`todos`, the tool's loose to-dos or the list's own). */
+        TodoOutline: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "todos" | "todolist";
+            /** @description For a list: the list itself as a row, with its open and done counts (its groups included), its standing and `permissions`; absent for the To-dos tool */
+            list?: components["schemas"]["ChildListRow"];
+            lists: components["schemas"]["TodoOutlineList"][];
+            groups: components["schemas"]["TodoOutlineGroup"][];
+            todos: components["schemas"]["ChildListRow"][];
+        };
+        TodoOutlineList: components["schemas"]["ChildListRow"] & {
+            groups: components["schemas"]["TodoOutlineGroup"][];
+            /** @description Its open to-dos outside any group, in position order */
+            todos: components["schemas"]["ChildListRow"][];
+        };
+        TodoOutlineGroup: components["schemas"]["ChildListRow"] & {
+            /** @description Its open to-dos, in position order */
+            todos: components["schemas"]["ChildListRow"][];
+        };
+        /** @description A board or one of its columns in one read: the columns in board order, each with its cards. */
+        Board: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "board" | "column";
+            /**
+             * Format: uuid
+             * @description The board the columns are on (the read's own id for a board)
+             */
+            board_id: string;
+            columns: components["schemas"]["BoardColumn"][];
+        };
+        BoardColumn: components["schemas"]["ChildListRow"] & {
+            /** @description Whether you are subscribed to the column: told of new cards and its comments */
+            subscribed: boolean;
+            /** @description Whether you collapsed it for yourself (`collapsedColumns` in `/my/ui-state`) */
+            collapsed: boolean;
+            /** @description Its active cards, at most 500, held ones included; Done's newest finished first, else in position order */
+            cards: components["schemas"]["ChildListRow"][];
+        };
+        /** @description A Message Board's order, one setting for everyone on the board. */
+        MessageBoardSort: {
+            /**
+             * @description `newest` newest post first, `activity` latest comment first, `alpha` A to Z by title
+             * @enum {string}
+             */
+            sort: "newest" | "activity" | "alpha";
+        };
+        /** @description A Message Board in its order: the pinned messages first, then the rest. */
+        MessageBoard: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description The board's order, `newest` when it was never set
+             * @enum {string}
+             */
+            sort: "newest" | "activity" | "alpha";
+            /** @description The pinned messages, most recently pinned first (ten at most) */
+            pinned: components["schemas"]["ChildListRow"][];
+            /** @description The other messages in the board's order, cut at `limit` */
+            messages: components["schemas"]["ChildListRow"][];
+            /** @description More messages follow the cut; ask again with a larger `limit` */
+            has_more: boolean;
         };
         CommentRow: components["schemas"]["Recording"] & {
             creator_name?: string | null;
             creator_image?: string | null;
+            /**
+             * Format: date-time
+             * @description When its author last edited it; null if never
+             */
+            edited_at: string | null;
+            /** @description The comment's cheers, oldest first */
+            cheers: components["schemas"]["InlineCheer"][];
+            permissions: components["schemas"]["CommentPermissions"];
         };
-        /** @description A cheer as embedded on chat rows and change-log events. */
+        /** @description A cheer as embedded on chat rows, comments and change-log events. */
         InlineCheer: {
             /** Format: uuid */
             id: string;
@@ -5615,12 +7943,15 @@ export interface components {
             /** @description Chat rows only */
             image?: string | null;
         };
-        /** @description One row of the standalone cheers listing. */
+        /** @description One row of the standalone cheers listing. On the sample project, the cheers its seeded people left come first: each keeps the same `id` on every read, carries the nil uuid as `membership_id`, and can't be removed. */
         RecordingCheerRow: {
             /** Format: uuid */
             id: string;
             content: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Who cheered. The nil uuid (`00000000-0000-0000-0000-000000000000`) on a sample project cheer, which no member has.
+             */
             membership_id: string;
             name: string | null;
             /** Format: date-time */
@@ -5687,10 +8018,31 @@ export interface components {
             filename: string;
             content_type: string;
             byte_size: number;
+            /** @description The length declared with it (a voice note), in milliseconds; null without one */
+            duration_ms: number | null;
             /** @description The stable inline route to embed in the post's HTML (`/api/v1/{org}/uploads/{id}/file`) */
             url: string;
             /** @description `/api/v1/{org}/uploads/{id}/download` */
             download_url: string;
+        };
+        /** @description A file reserved in a folder with `createUpload`'s JSON form: where to PUT its bytes. Single mode PUTs the whole file to `url`; multipart mode PUTs each `part_size` slice to `part_urls[n-1]` (the last may be shorter). The URLs expire after 12 hours and the reservation after 24. Post it with `postUploads`. */
+        UploadReservation: {
+            /**
+             * Format: uuid
+             * @description The reservation's id, for `postUploads` and `abandonUpload`
+             */
+            id: string;
+            /** @enum {string} */
+            mode: "single" | "multipart";
+            /**
+             * Format: uri
+             * @description Single mode: the presigned PUT URL
+             */
+            url?: string;
+            /** @description Multipart mode: one presigned PUT URL per part, in order */
+            part_urls?: string[];
+            /** @description Bytes per part (every part but the last) */
+            part_size: number;
         };
         /** @description A file reserved with `createAttachment`'s JSON form: where to PUT its bytes. Single mode PUTs the whole file to `url`; multipart mode PUTs each `part_size` slice to `part_urls[n-1]` (the last may be shorter). The URLs expire after 12 hours and the reservation after 24. */
         AttachmentReservation: {
@@ -5711,7 +8063,7 @@ export interface components {
             /** @description Bytes per part (every part but the last) */
             part_size: number;
         };
-        /** @description When a check-in question asks. Daily uses `days`; weekly and every_other_week use `day_of_week`; monthly means the first `day_of_week` of the month unless `day_of_month` is set. */
+        /** @description When a check-in question asks. Daily uses `days`; weekly and every_other_week use `day_of_week`; monthly means the first `day_of_week` of the month unless `day_of_month` is set. A response carries `minute` always and only the day field its frequency reads, with the defaults applied (a daily question's weekdays, Monday for a missing `day_of_week`). */
         CheckInSchedule: {
             /** @enum {string} */
             frequency: "daily" | "weekly" | "every_other_week" | "monthly";
@@ -5759,6 +8111,13 @@ export interface components {
              * @description The /public/{token} capability URL: anyone holding it can read the sanitized content
              */
             url: string | null;
+            /**
+             * Format: date-time
+             * @description When the live link was made; null while unpublished
+             */
+            created_at: string | null;
+            /** @description Who made the live link, by name; null while unpublished, or when they have left */
+            created_by_name: string | null;
         };
         /** @description An account-wide home-screen grouping of projects. */
         ProjectFolder: {
@@ -5777,8 +8136,16 @@ export interface components {
             filename: string;
             byte_size: number;
             content_type: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When this version was superseded by the next
+             */
             created_at: string;
+            /**
+             * Format: date-time
+             * @description When this version was posted
+             */
+            posted_at: string;
             /** @description Relative API path of this version's download redirect */
             download_url: string;
         };
@@ -5903,6 +8270,8 @@ export interface components {
             days: string[];
             /** @description The caller can change this week: their own, or an owner's or admin's view of someone still on the team */
             writable: boolean;
+            /** @description The person has ever added a row or logged time, however it was entered: the first-run hint shows while false (an empty week alone means nothing, since every week starts empty) */
+            has_history: boolean;
             approvals_enabled: boolean;
             /**
              * @description The week's approval status; null while approvals are off
@@ -6344,6 +8713,58 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    listExportableConversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversations, most recently active first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportableConversation"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listExportableProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exportable projects, A to Z */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportableProject"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     uploadAccountLogo: {
         parameters: {
             query?: never;
@@ -6621,6 +9042,8 @@ export interface operations {
                      * @description The direct message whose line the file will be attached to (instead of project_id)
                      */
                     dm_id?: string;
+                    /** @description A recording's length in whole milliseconds (a voice note), kept with the file and served as `duration_ms` wherever the file is listed; up to a day */
+                    duration_ms?: string;
                 };
                 "application/json": {
                     filename: string;
@@ -6638,6 +9061,8 @@ export interface operations {
                      * @description The direct message whose line the file will be attached to (instead of project_id)
                      */
                     dm_id?: string;
+                    /** @description A recording's length in whole milliseconds (a voice note), kept with the file and served as `duration_ms` wherever the file is listed */
+                    duration_ms?: number;
                 };
             };
         };
@@ -7071,6 +9496,16 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description Move the event, with its repeating pieces, onto this project's Calendar (it must be switched on), or null for the account calendar. Comments come along; invitees are not told of a move alone.
+                     */
+                    project_id?: string | null;
+                    /**
+                     * Format: uuid
+                     * @description With `project_id`: which of that project's Calendars (a `calendar` tool's `container_id`); omitted, its first. 422 without `project_id`.
+                     */
+                    calendar_id?: string | null;
                     title?: string;
                     /** @description Plain-text notes, converted to HTML */
                     content?: string | null;
@@ -7106,6 +9541,51 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    copyCalendarEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description The project whose Calendar receives the copy, or null for the account calendar
+                     */
+                    project_id: string | null;
+                    /**
+                     * Format: uuid
+                     * @description Which of the project's Calendars (a `calendar` tool's `container_id`); omitted, its first
+                     */
+                    calendar_id?: string | null;
+                    /** @default false */
+                    include_comments?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The copy */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recording"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
     downloadEventIcs: {
         parameters: {
             query?: never;
@@ -7129,6 +9609,34 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    lookupEventOccurrence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The repeating event */
+                eventId: string;
+                /** @description The day's anchor-zone key (YYYY-MM-DD), as the link carries it */
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What holds the day */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccurrenceLookup"];
+                };
+            };
             404: components["responses"]["NotFound"];
         };
     };
@@ -7223,6 +9731,30 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
+        };
+    };
+    listEventCalendars: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Your calendars */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventCalendar"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
         };
     };
     listCalendarFeeds: {
@@ -7540,6 +10072,91 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    getChat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                dmId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DmSummary"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateChat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                dmId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    title?: string | null;
+                    /** Format: uuid */
+                    cover_upload_id?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DmSummary"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    listChatPeople: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whom you may chat with */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatPeople"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
     removeCheer: {
         parameters: {
             query?: never;
@@ -7853,6 +10470,68 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    getEverything: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The browsers' facts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        has_checkins: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    listEverything: {
+        parameters: {
+            query?: {
+                /** @description Docs and files: one kind */
+                kind?: "all" | "images" | "pdfs" | "documents" | "videos";
+                /** @description Docs and files: only what these people posted */
+                uploader_id?: string[];
+                /** @description Docs and files: include files attached to posts and private chats (default true) */
+                attachments?: "true" | "false";
+                /** @description The next page's position, opaque. Take it from a `Link: rel="next"` URL and never build one; it supersedes `page`. */
+                cursor?: components["parameters"]["cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                section: "messages" | "comments" | "files" | "checkins";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rows, newest first */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EverythingRow"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            422: components["responses"]["Validation"];
+        };
+    };
     listProjectFolders: {
         parameters: {
             query?: never;
@@ -8105,6 +10784,135 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    listLinkServices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The services */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkService"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    listListTemplates: {
+        parameters: {
+            query?: {
+                /** @description Defaults to active */
+                status?: "active" | "archived";
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The list templates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListTemplate"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    createListTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Refused with 422 (invalid) when it carries a link: a scheme such as https://, a www. address, or a domain followed by a path. A bare domain such as Linear.app is a name and is accepted. */
+                    name: string;
+                    description?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The new list template */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListTemplate"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    useListTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                listTemplateId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description The project whose To-dos receive the list
+                     */
+                    project_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The new to-do list */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** Format: uuid */
+                        project_id: string;
+                        title: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
     listMerges: {
         parameters: {
             query?: never;
@@ -8298,6 +11106,57 @@ export interface operations {
                         priorities: components["schemas"]["GroupedAssignment"][];
                         non_priorities: components["schemas"]["GroupedAssignment"][];
                     };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    listAssignedByMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open work you assigned, one row per assignee */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignedByMeRow"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    listCompletedAssignedByMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed work you assigned, one row per assignee */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": (components["schemas"]["AssignedByMeRow"] & {
+                        /** @description Who completed it, by name; null when they have left */
+                        completed_by_name: string | null;
+                    })[];
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -8928,8 +11787,10 @@ export interface operations {
     listNotifications: {
         parameters: {
             query?: {
-                /** @description true: unread rows only */
+                /** @description true: unread rows only (the older spelling of read=false; with read=true, 422) */
                 unread?: boolean;
+                /** @description true: read rows only; false: unread rows only. Anything else is a 422 */
+                read?: boolean;
                 /** @description true: return {unread_count} alone (the mobile tab badge's poll; the reminder sweeps still run) */
                 count_only?: boolean;
                 /** @description Cursor: only rows created after this instant; switches the order to oldest first */
@@ -8999,6 +11860,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         ok: boolean;
+                        /** @description The rows it marked read, so Undo can put back exactly those (PATCH /my/notifications/{notificationId} with read: false), past whatever page is loaded */
+                        notification_ids: string[];
                     };
                 };
             };
@@ -9071,6 +11934,63 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    reportPresence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateMyTitle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The title as stored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        title: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
             422: components["responses"]["Validation"];
         };
     };
@@ -9592,13 +12512,19 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The person */
+            /** @description The person; a removed person, for whoever could see them, with `removed_at` */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Person"];
+                    "application/json": components["schemas"]["Person"] & {
+                        /**
+                         * Format: date-time
+                         * @description Only on a removed person's read: when they left. Their name and picture stay; nothing about them can be changed, and their company and chat are gone
+                         */
+                        removed_at?: string;
+                    };
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -9891,6 +12817,31 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    resetPersonTwoFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reset */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listInvitations: {
         parameters: {
             query?: never;
@@ -9940,6 +12891,39 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    updateInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                invitationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description true for a member's invitation, false for an outside collaborator's */
+                    employee: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Switched */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
         };
     };
     getInvitationProjects: {
@@ -10128,12 +13112,45 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    listRemovedPeople: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The removed people, by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        membership_id: string;
+                        name: string | null;
+                        /** Format: email */
+                        email: string;
+                        /** Format: date-time */
+                        removed_at: string | null;
+                    }[];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     listProjects: {
         parameters: {
             query?: {
                 /** @description Defaults to active */
                 status?: "active" | "archived" | "trashed";
-                /** @description members: the home listing's avatar-stack fields */
+                /** @description members: the home listing, with the avatar-stack fields and your last visit (`visited_at`) */
                 include?: "members";
                 /** @description all: owner-only list of every project with a joined flag */
                 scope?: "all";
@@ -10300,6 +13317,32 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    listProjectArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archived items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectArchiveItem"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getProjectAudience: {
         parameters: {
             query?: {
@@ -10323,6 +13366,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectAudience"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getProjectClientLens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One group per tool switched on */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientLensGroup"][];
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -10506,6 +13575,31 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Project"];
                 };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    leaveProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Left */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
@@ -10886,6 +13980,8 @@ export interface operations {
                         employee?: boolean;
                         title?: string;
                     }[];
+                    /** @description Plain text, included in the email that tells each person granted or invited here that they were added. A note with a link, a web address or an email address is refused with 422 (invalid) before anything is written or sent. */
+                    note?: string;
                 };
             };
         };
@@ -10905,6 +14001,13 @@ export interface operations {
                             role?: string;
                         }[];
                         invited: string[];
+                        /** @description The invitation each `create` address got, in the same order as `invited`: someone new arrives as an outside collaborator unless `employee` was true, and PATCH /people/invitations/{invitationId} switches a pending one to a member's. */
+                        invitations?: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: email */
+                            email: string;
+                        }[];
                     };
                 };
             };
@@ -11171,7 +14274,7 @@ export interface operations {
             query?: {
                 /** @description Any day in the week; default today in the caller's zone. The week runs from the org's week start */
                 week?: string;
-                /** @description Narrows to titles that match, and to what sits in a list, to-do group, folder or card table column whose name matches */
+                /** @description Narrows to titles that match, and to what sits in a list, to-do group, folder or board column whose name matches */
                 q?: string;
             };
             header?: never;
@@ -11385,6 +14488,59 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    destroyProjectTrashItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+                /** @description A row of the project's trash */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted for good */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    recordProjectVisit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recorded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     uploadProjectWallpaper: {
         parameters: {
             query?: never;
@@ -11480,6 +14636,13 @@ export interface operations {
                         created_by_name?: string | null;
                         /** Format: date-time */
                         created_at: string;
+                        /** @description The item's own state; its public page serves only while it is active */
+                        status: components["schemas"]["RecordingStatus"];
+                        /**
+                         * @description Its project's state, null for an item in no project; the public page serves only while the project is active
+                         * @enum {string|null}
+                         */
+                        project_status: "active" | "archived" | "trashed" | null;
                     }[];
                 };
             };
@@ -11760,8 +14923,15 @@ export interface operations {
                     meta?: {
                         [key: string]: unknown;
                     } | null;
+                    /** @description A draft message, document or linked file: who it notifies when it posts ("asked" the people whose project bell is on, chosen membership ids, "none", or "everyone"), the draft's other settings kept. Refused (422) for anything that is not such a draft */
+                    notify?: ("everyone" | "asked" | "none") | string[];
                     /** @description Uploads only: rename the file, the extension is kept */
                     base_name?: string;
+                    /**
+                     * Format: uri
+                     * @description Linked files only: the address it opens, validated as on create and kept on `meta.url` with every other key of its meta. Refused (422) for anything else
+                     */
+                    url?: string;
                     schedule?: components["schemas"]["QuestionSchedule"];
                     /** @description Questions only: replace who's asked (new askees get subscribed) */
                     membership_ids?: string[];
@@ -11794,6 +14964,10 @@ export interface operations {
                 date?: string;
                 /** @description Only answers by this membership */
                 creator_id?: string;
+                /** @description Page by day: the answers of the newest this many days with answers (422 outside 1 to 100) */
+                days?: number;
+                /** @description Only answers for days before this one. The `Link` of a day page sets it; a client follows the header rather than building it */
+                before?: string;
             };
             header?: never;
             path: {
@@ -11809,12 +14983,15 @@ export interface operations {
             /** @description The answers, newest day first */
             200: {
                 headers: {
+                    Link: components["headers"]["Link"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": (components["schemas"]["Recording"] & {
-                        creator_name?: string | null;
-                        comment_count?: number;
+                        creator_name: string | null;
+                        /** @description The author's avatar path, or null (colored initials) */
+                        creator_image: string | null;
+                        comment_count: number;
                     })[];
                 };
             };
@@ -11889,6 +15066,8 @@ export interface operations {
                         /** Format: uuid */
                         membership_id: string;
                         name: string;
+                        /** @description Their avatar path, or null (colored initials) */
+                        image: string | null;
                         answer_count: number;
                         /**
                          * Format: date
@@ -12043,6 +15222,33 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
+        };
+    };
+    getBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The board's id (its container), or a column's */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The board or the column */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Board"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
         };
     };
     createCardWithSteps: {
@@ -12317,6 +15523,49 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    moveCardToColumn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The card's id */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uuid
+                     * @description The column on the same board
+                     */
+                    column_id: string;
+                    /** @description In that column's On Hold section; omitted is false */
+                    on_hold?: boolean;
+                    /** @description Fractional sort position within the column */
+                    position?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The card where it now is */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recording"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
     listComments: {
         parameters: {
             query?: never;
@@ -12425,13 +15674,24 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The completed recording */
+            /** @description The completed recording; for a recurring primary, the series' next to-do it spawned */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Recording"];
+                    "application/json": components["schemas"]["Recording"] & {
+                        /** @description The to-do completing a recurring primary spawned, carrying the schedule on; null otherwise */
+                        next_occurrence: {
+                            /** Format: uuid */
+                            id: string;
+                            title: string | null;
+                            /** Format: date */
+                            starts_on: string | null;
+                            /** Format: date */
+                            due_on: string | null;
+                        } | null;
+                    };
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -12559,6 +15819,208 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["Validation"];
+        };
+    };
+    listChatLines: {
+        parameters: {
+            query?: {
+                /** @description A line's `cursor`: the page of lines before it */
+                before?: string;
+                /** @description A line's `cursor`: the lines after it */
+                after?: string;
+                /** @description Comma-separated line ids, 1 to 100 */
+                ids?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The chat room or private chat */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The lines */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatLines"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    postChatLine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The chat room or private chat */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The line as rich text; wins over `content` */
+                    content_html?: string;
+                    /** @description The line as plain text */
+                    content?: string;
+                    /**
+                     * Format: uuid
+                     * @description The line of this chat it replies to
+                     */
+                    reply_to_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The line, with its preview when its link had one */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatLine"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    readChatLines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The chat room or private chat */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getMessageBoard: {
+        parameters: {
+            query?: {
+                /** @description Only this category's messages, the pinned ones included */
+                category_id?: string;
+                /** @description How many of the unpinned messages to return; the pinned ones always come in full */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The Message Board's id */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The board */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageBoard"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    setMessageBoardSort: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The Message Board's id */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageBoardSort"];
+            };
+        };
+        responses: {
+            /** @description The order now in force */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageBoardSort"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    listNotifiedPeople: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The people notified */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        membership_id: string;
+                        name: string;
+                        /** @description Same-origin path or external URL; null means render an initials disc */
+                        image: string | null;
+                    }[];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
         };
     };
     optOutQuestion: {
@@ -12767,6 +16229,11 @@ export interface operations {
                             visible_to_clients?: boolean;
                             /** @description The whole chart as it stood when the update was saved */
                             positions?: components["schemas"]["ProgressSnapshotDot"][];
+                            /**
+                             * @description The project's health as it stood when the update was saved; null while its gauge was off
+                             * @enum {string|null}
+                             */
+                            health_status?: "on_track" | "some_risk" | "concerned" | null;
                         }[];
                         /** @description Legacy per-move log, newest first */
                         history: {
@@ -13006,11 +16473,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": (components["schemas"]["Recording"] & {
+                        /** @description What you may do to the question, as the write decides */
+                        permissions: components["schemas"]["RecordingPermissions"];
+                        /**
+                         * Format: date-time
+                         * @description When it next asks: the next day its schedule names, at its hour in `time_zone`; null without a schedule, while paused, and in a template
+                         */
+                        next_asks_at: string | null;
+                        /** @description When it asks, as the sweep reads it: `days` on a daily question (its default weekdays spelled out), `day_of_week` on a weekly, every-other-week or first-weekday monthly one, `day_of_month` on a fixed-day monthly one, and `hour` and `minute` always. Absent for a question without a readable schedule */
                         schedule?: components["schemas"]["CheckInSchedule"];
-                        askees?: components["schemas"]["CheckInAskee"][];
-                        answer_count?: number;
+                        /** @description The IANA time zone `hour` and `minute` are on (the zone stamped when the schedule was set, else its author's); null when `schedule` is absent */
+                        time_zone: string | null;
+                        /** @description Who it asks */
+                        askees: components["schemas"]["CheckInAskee"][];
+                        answer_count: number;
                         /** @description Answers in the last 24 hours */
-                        recent_answer_count?: number;
+                        recent_answer_count: number;
+                        /** @description It has stopped asking everyone (`PUT /recordings/{recordingId}/pause`) */
+                        paused: boolean;
+                        /** @description You asked it to stop asking you (`PUT /recordings/{recordingId}/opt-out`) */
+                        opted_out: boolean;
+                        /** @description The question is in a template: a template never asks, and its questions take no answers */
+                        template: boolean;
+                        /** @description `POST /recordings/{recordingId}/answers` takes your answer: the question is active and its project active and not a template. Being asked is not required; an agent never answers. A read-only token and an account over its plan refuse every write alike, and are not reflected here */
+                        answerable: boolean;
                     })[];
                 };
             };
@@ -13059,7 +16545,10 @@ export interface operations {
     };
     listRecordingReferences: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description `to` (the default): what links here; `from`: what this item links to */
+                direction?: "to" | "from";
+            };
             header?: never;
             path: {
                 /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
@@ -13080,6 +16569,34 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addStandardColumns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The board's id */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The board */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Board"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -13399,6 +16916,33 @@ export interface operations {
             };
         };
     };
+    getTodoOutline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The To-dos tool's id, or a list's */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The outline */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodoOutline"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listChatUploads: {
         parameters: {
             query?: never;
@@ -13429,9 +16973,18 @@ export interface operations {
                         filename: string;
                         byte_size: number;
                         content_type: string;
+                        /** @description A voice note's length in milliseconds, as declared when it was recorded; null without one */
+                        duration_ms: number | null;
                         /** Format: date-time */
                         posted_at: string;
                         posted_by?: string | null;
+                        /**
+                         * Format: uuid
+                         * @description The line that posted it
+                         */
+                        line_id: string;
+                        /** @description That line's cursor, for `GET /recordings/{recordingId}/lines?cursor=` (Show in Chat opens the transcript at it) */
+                        line_cursor: string;
                     }[];
                 };
             };
@@ -13469,21 +17022,128 @@ export interface operations {
                      */
                     visible_to_clients?: "true" | "false";
                 };
+                "application/json": {
+                    filename: string;
+                    /** @description The file's exact size in bytes, up to 5 GB; the post checks the stored object against it */
+                    byte_size: number;
+                    /** @description Sent again as the PUT's Content-Type in single mode */
+                    content_type?: string;
+                };
             };
         };
         responses: {
-            /** @description The created upload recording */
+            /** @description The multipart form: the created upload recording. The JSON form: the reservation and its presigned storage URLs */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Recording"];
+                    "application/json": components["schemas"]["Recording"] | components["schemas"]["UploadReservation"];
                 };
             };
             401: components["responses"]["Unauthenticated"];
             402: components["responses"]["PlanLimit"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    abandonUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The folder the file was reserved for */
+                recordingId: string;
+                /** @description The reservation's id */
+                uploadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Given back */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    postUploads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The folder the files were reserved for */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The staged files, in the order they post */
+                    items: {
+                        /**
+                         * Format: uuid
+                         * @description The reservation's id
+                         */
+                        id: string;
+                        /** @description Multipart mode: each uploaded part's ETag */
+                        parts?: {
+                            part_number: number;
+                            etag: string;
+                        }[];
+                        /** @description The file's notes, sanitized server-side */
+                        description_html?: string;
+                    }[];
+                    /** @description Who hears of the post, once for every file: "asked" (the people whose project bell is on), chosen membership ids, "none", or "everyone"; omitted means nobody is notified */
+                    notify?: ("everyone" | "asked" | "none") | string[];
+                    /** @description Who can see files posted at the top of Docs & Files; inside a folder they follow it */
+                    visible_to_clients?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description What posted, and what stopped the rest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The files that posted, in order: each reservation and the upload recording it became */
+                        posted: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            recording_id: string;
+                        }[];
+                        /** @description The file that stopped the post, with the status and error the refused call would have answered; null when every file posted */
+                        failed: {
+                            /** Format: uuid */
+                            id: string;
+                            status: number;
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        } | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
             422: components["responses"]["Validation"];
         };
     };
@@ -13633,6 +17293,33 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    downloadFolderZip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The Docs & Files folder's id */
+                recordingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The zip, streamed as an attachment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     batchRecordings: {
         parameters: {
             query?: never;
@@ -13707,6 +17394,35 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    downloadSelectionZip: {
+        parameters: {
+            query: {
+                /** @description 1 to 100 recording ids, comma-separated */
+                ids: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The zip, streamed as an attachment */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
     getUpcomingCalendarReport: {
         parameters: {
             query: {
@@ -13746,7 +17462,10 @@ export interface operations {
     };
     getHealthReport: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Pass true to list gauges switched on with no reading yet */
+                include_unset?: "true" | "false";
+            };
             header?: never;
             path: {
                 /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
@@ -13769,6 +17488,120 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getProgressReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The charts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        recent_days: number;
+                        charts: components["schemas"]["ProgressOverviewChart"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getRoadmapReport: {
+        parameters: {
+            query?: {
+                /** @description The window's first day */
+                start?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date */
+                        today: string;
+                        /** Format: date */
+                        window_starts_on: string;
+                        /** Format: date */
+                        window_ends_on: string;
+                        can_mark: boolean;
+                        projects: components["schemas"]["RoadmapReportProject"][];
+                        markers: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** Format: date */
+                            date: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    getTasksReport: {
+        parameters: {
+            query?: {
+                date?: string;
+                kind?: "todo" | "card";
+            };
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The day's log */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: date */
+                        date: string;
+                        /**
+                         * Format: date
+                         * @description The caller's today
+                         */
+                        today: string;
+                        /** @enum {string} */
+                        kind: "todo" | "card";
+                        added: components["schemas"]["TaskLogItem"][];
+                        completed: components["schemas"]["TaskLogItem"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Validation"];
         };
     };
     getTimesheetReport: {
@@ -13937,6 +17770,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OverdueReport"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getUnassignedWorkReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The projects */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        projects: {
+                            /** Format: uuid */
+                            project_id: string;
+                            project_name: string;
+                            items: components["schemas"]["UnassignedReportItem"][];
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getUpcomingWorkReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The windows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sections: {
+                            /** @enum {string} */
+                            scope: "overdue" | "due_today" | "due_tomorrow" | "due_later_this_week" | "due_next_week" | "due_later";
+                            items: components["schemas"]["WorkReportItem"][];
+                        }[];
+                    };
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -14461,6 +18357,33 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    duplicateTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                templateId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The copy */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     useTemplate: {
         parameters: {
             query?: never;
@@ -14856,6 +18779,41 @@ export interface operations {
             };
         };
     };
+    listTimesheetPeople: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The people, by name */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        people: {
+                            /** Format: uuid */
+                            membership_id: string;
+                            name: string | null;
+                            image: string | null;
+                            /** @description No longer on the team; listed while they have hours */
+                            removed: boolean;
+                        }[];
+                        any_time_logged: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listTrash: {
         parameters: {
             query?: never;
@@ -14931,6 +18889,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Recording"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    restoreFromTrash: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default recording
+                     * @enum {string}
+                     */
+                    kind?: "recording" | "template";
+                    /** Format: uuid */
+                    id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Restored */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashRestore"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    undoTrashRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description From POST /trash/restores */
+                    undo_token: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Back in the trash */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    listTrashedTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trashed templates, oldest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashedTemplate"][];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    destroyTrashedTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                templateId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -15015,6 +19099,11 @@ export interface operations {
                             filename: string;
                             byte_size: number;
                             content_type: string;
+                            /**
+                             * Format: date-time
+                             * @description When the current version was posted: the latest replacement, or the file's own post
+                             */
+                            posted_at: string;
                         } | null;
                         versions: components["schemas"]["UploadVersion"][];
                     };
@@ -15208,6 +19297,416 @@ export interface operations {
             };
         };
     };
+    getJoinInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invitation's token, from the link in its email (`/join/{token}`) */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invitation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinInvitation"];
+                };
+            };
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    acceptJoinInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invitation's token, from the link in its email (`/join/{token}`) */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The workspace joined */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinedOrganization"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Already used or declined, or the address already has an account */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expired, or turned off */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    joinInvitationWithAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invitation's token, from the link in its email (`/join/{token}`) */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JoinInvitationAccount"];
+            };
+        };
+        responses: {
+            /** @description The workspace joined, with the new session */
+            201: {
+                headers: {
+                    /** @description The new account's session token, to send as `Authorization: Bearer` (the same header Better Auth's own sign-up answers with) */
+                    "set-auth-token"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinedOrganization"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Already used or declined, or the address already has an account */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expired, or turned off */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    declineJoinInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invitation's token, from the link in its email (`/join/{token}`) */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Declined */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinDecline"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Already used or declined, or the address already has an account */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expired, or turned off */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    getJoinInviteLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invite link's token (`/join/link/{token}`) */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invite link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinInviteLink"];
+                };
+            };
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    joinWithInviteLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invite link's token (`/join/link/{token}`) */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The workspace joined */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinedOrganization"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            402: components["responses"]["PlanLimit"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Expired, or turned off */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    joinInviteLinkWithAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invite link's token (`/join/link/{token}`) */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JoinInviteLinkAccount"];
+            };
+        };
+        responses: {
+            /** @description The workspace joined, with the new session */
+            201: {
+                headers: {
+                    /** @description The new account's session token, to send as `Authorization: Bearer` (the same header Better Auth's own sign-up answers with) */
+                    "set-auth-token"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinedOrganization"];
+                };
+            };
+            402: components["responses"]["PlanLimit"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description Already used or declined, or the address already has an account */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Expired, or turned off */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    setMyAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description The image, 10 MB or smaller
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The picture's address */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Same-origin path the picture serves at */
+                        image: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description Over 10 MB (`too_large`) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
+    removeMyAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No picture */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Always null: no picture */
+                        image: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     listConnectedApps: {
         parameters: {
             query?: never;
@@ -15251,6 +19750,115 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getEmailStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Your email state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
+    resumeEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Email is back on */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            /** @description `bouncing`: the address stopped accepting mail, so change it instead. `already_resumed`: email was turned back on once already; contact support. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `provider_error`: the email provider refused; nothing changed. Try again in a few minutes. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `unavailable`: turning email back on isn't available right now; nothing changed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setMyPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    new_password: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The password is set */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description The account already has a password (`password_exists`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
         };
     };
     getPreferences: {
@@ -15300,6 +19908,46 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    updateMyProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    /** Format: email */
+                    email?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Your profile after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyProfile"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            /** @description The address belongs to another account (`email_taken`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["Validation"];
+        };
+    };
     registerPushDevice: {
         parameters: {
             query?: never;
@@ -15310,7 +19958,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description The transport's token: the hex device token for `apns`. */
+                    /** @description The transport's token: the hex device token for `apns`, the registration token for `fcm` (with `platform: android`). */
                     token: string;
                     kind: components["schemas"]["PushTokenKind"];
                     /** @enum {string} */
@@ -15499,6 +20147,126 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    startNativeAppleSignIn: {
+        parameters: {
+            query: {
+                /** @description base64url(SHA-256(code_verifier)), PKCE's S256 transform of a verifier the app keeps */
+                challenge: string;
+                /** @description The policies in force are accepted, for a new account */
+                terms?: "1";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To Apple's sign-in */
+            302: {
+                headers: {
+                    /** @description Where the browser goes next */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Validation"];
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+            /** @description Sign in with Apple isn't configured (`apple_unavailable`) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    finishNativeAppleSignIn: {
+        parameters: {
+            query: {
+                /** @description base64url(SHA-256(code_verifier)), PKCE's S256 transform of a verifier the app keeps */
+                challenge: string;
+                /** @description Set by the sign-in flow when it was refused */
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Back to the app: `thicket://auth/apple?code=…` or `?error=…` */
+            302: {
+                headers: {
+                    /** @description Where the browser goes next */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    exchangeNativeSignInCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                    code_verifier: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Signed in */
+            204: {
+                headers: {
+                    /** @description The new session's token */
+                    "set-auth-token"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Validation"];
+            /** @description An app too old to serve (`app_update_required`) */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+        };
+    };
     listOrganizations: {
         parameters: {
             query?: never;
@@ -15615,6 +20383,78 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
+        };
+    };
+    getPublicLinkPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The link's token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicLinkPage"];
+                };
+            };
+            /** @description Not available */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getRichTextVocabulary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The vocabulary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RichTextVocabulary"];
+                };
+            };
+        };
+    };
+    getSignupPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The policies in force */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupPolicy"];
+                };
+            };
         };
     };
 }
