@@ -5253,6 +5253,128 @@
         }
       }
     },
+    "/api/v1/{orgSlug}/my/blocks": {
+      "get": {
+        "operationId": "listBlocks",
+        "tags": [
+          "Me"
+        ],
+        "summary": "The people you blocked",
+        "description": "Newest block first, people since removed from the organization included (a block outlives a removal). Yours alone: nobody else, owners and admins included, can read who you blocked.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your blocks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/blocks/{membershipId}": {
+      "put": {
+        "operationId": "blockPerson",
+        "tags": [
+          "Me"
+        ],
+        "summary": "Block a person",
+        "description": "Idempotent: blocking again keeps the first block's date. Any person you know in the organization, owners, admins, clients and agents included; never yourself (422 `invalid`). While it stands, held by the server for every client: their private-chat lines, mentions of you and cheers on your words make no notification, push or email for you; they can't start a private chat that includes you (`POST /chats` answers 403 `chat_blocked`); and a one-to-one private chat between you stays readable but takes no new lines, files, edits or deletions from either side (`DmSummary.blocked`). Nothing else changes: shared projects, assignments, events, subscriptions, roles and access stay as they are. Nobody is told.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "membershipId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The person's membership id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The block",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Block"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "unblockPerson",
+        "tags": [
+          "Me"
+        ],
+        "summary": "Unblock a person",
+        "description": "Idempotent: unblocking someone you haven't blocked is a no-op. What they addressed to you while blocked stays held back; what they do from now on reaches you again.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          },
+          {
+            "name": "membershipId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The person's membership id"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unblocked"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/v1/{orgSlug}/my/bookmarks": {
       "get": {
         "operationId": "listBookmarks",
@@ -6398,6 +6520,58 @@
           },
           "422": {
             "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/v1/{orgSlug}/my/reports": {
+      "post": {
+        "operationId": "createReport",
+        "tags": [
+          "Me"
+        ],
+        "summary": "Report someone's words or a person",
+        "description": "Reports a recording someone else wrote that you can open (a message, comment, document, file, to-do, card, event, answer, a line in a project's chat or a private chat, a group chat's name), a typed cheer someone else left, or another person you know in the organization. The report is kept with a copy of what it names as it read then, and is emailed to the organization's owners and admins (never you or the person it concerns) and to Thicket's support team. The person reported is never told. Nothing about the content or anyone's access changes. Refused: your own words or yourself (422 `invalid`), a note over 1,000 characters or none with `other` (422 `invalid`), 20 reports in the last hour (429 `rate_limited`), and anything you can't open (404).",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/orgSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The report, and whom it concerns",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportReceipt"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           }
         }
       }
@@ -24042,6 +24216,7 @@
           "last_line",
           "unread_count",
           "frozen",
+          "blocked",
           "updated_at"
         ],
         "properties": {
@@ -24162,6 +24337,18 @@
           "frozen": {
             "type": "boolean",
             "description": "Someone in it, you included, is in a company whose private chats are off: it stays readable and takes no new lines or files"
+          },
+          "blocked": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "by_you",
+              "by_them",
+              null
+            ],
+            "description": "A one-to-one under a block: `by_you` while you blocked the other person (PUT /my/blocks/{membershipId}; DELETE lifts it), `by_them` while they blocked you. Either way it stays readable and takes no new lines, files, edits or deletions; posting answers 403 `chat_blocked`. Null for any other conversation, and for a group chat whatever its people's blocks"
           },
           "updated_at": {
             "type": "string",
@@ -27131,6 +27318,10 @@
           "employee": {
             "type": "boolean",
             "description": "Works at the organization. False for an outside collaborator, whose role is `member` but who reaches only the projects they are on and can't make projects, add people or be an admin, and false for a client."
+          },
+          "blocked": {
+            "type": "boolean",
+            "description": "Whether you blocked this person (PUT /my/blocks/{membershipId}; DELETE lifts it). `GET /people/{membershipId}` alone carries it, and never says whether they blocked you. A block holds their private-chat lines, mentions and cheers back from you, and shuts a one-to-one private chat between you; nothing about the work changes."
           },
           "can_chat": {
             "type": "boolean",
@@ -31076,6 +31267,152 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "ReportRequest": {
+        "type": "object",
+        "required": [
+          "subject_type",
+          "subject_id",
+          "reason"
+        ],
+        "properties": {
+          "subject_type": {
+            "type": "string",
+            "enum": [
+              "recording",
+              "cheer",
+              "person"
+            ],
+            "description": "What `subject_id` names: a recording, a cheer (`RecordingCheerRow.id`), or a person (a membership id)"
+          },
+          "subject_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "harassment",
+              "hate",
+              "threats",
+              "sexual",
+              "spam",
+              "private_information",
+              "other"
+            ],
+            "description": "Harassment or bullying, Hate or discrimination, Threats or violence, Sexual content, Spam or a scam, Private information shared, Something else"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1000,
+            "description": "Up to 1,000 characters; required with `other`"
+          }
+        }
+      },
+      "ReportReceipt": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "person",
+          "person_blocked"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "person": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "membership_id",
+              "name"
+            ],
+            "description": "Whom the report concerns while they are still in the organization, so a client can offer to block them: the person reported, or the author of what was reported; null for words no member wrote (the sample project's) and for someone since removed",
+            "properties": {
+              "membership_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "person_blocked": {
+            "type": "boolean",
+            "description": "Whether you already blocked that person"
+          }
+        }
+      },
+      "Block": {
+        "type": "object",
+        "required": [
+          "person",
+          "blocked_at"
+        ],
+        "properties": {
+          "person": {
+            "type": "object",
+            "required": [
+              "membership_id",
+              "name",
+              "image",
+              "kind"
+            ],
+            "properties": {
+              "membership_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Same-origin avatar path or external URL; null means render an initials disc"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "person",
+                  "agent"
+                ]
+              }
+            }
+          },
+          "blocked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BlockList": {
+        "type": "object",
+        "required": [
+          "blocks"
+        ],
+        "properties": {
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            }
           }
         }
       },

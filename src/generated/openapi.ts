@@ -1284,6 +1284,50 @@ export interface paths {
         patch: operations["moveUpNext"];
         trace?: never;
     };
+    "/api/v1/{orgSlug}/my/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The people you blocked
+         * @description Newest block first, people since removed from the organization included (a block outlives a removal). Yours alone: nobody else, owners and admins included, can read who you blocked.
+         */
+        get: operations["listBlocks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/blocks/{membershipId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Block a person
+         * @description Idempotent: blocking again keeps the first block's date. Any person you know in the organization, owners, admins, clients and agents included; never yourself (422 `invalid`). While it stands, held by the server for every client: their private-chat lines, mentions of you and cheers on your words make no notification, push or email for you; they can't start a private chat that includes you (`POST /chats` answers 403 `chat_blocked`); and a one-to-one private chat between you stays readable but takes no new lines, files, edits or deletions from either side (`DmSummary.blocked`). Nothing else changes: shared projects, assignments, events, subscriptions, roles and access stay as they are. Nobody is told.
+         */
+        put: operations["blockPerson"];
+        post?: never;
+        /**
+         * Unblock a person
+         * @description Idempotent: unblocking someone you haven't blocked is a no-op. What they addressed to you while blocked stays held back; what they do from now on reaches you again.
+         */
+        delete: operations["unblockPerson"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/{orgSlug}/my/bookmarks": {
         parameters: {
             query?: never;
@@ -1618,6 +1662,26 @@ export interface paths {
          * @description Sets your own title in this organization, as your profile shows it; null or an empty string clears it. An owner or admin sets someone else's through `PATCH /people/{membershipId}`.
          */
         patch: operations["updateMyTitle"];
+        trace?: never;
+    };
+    "/api/v1/{orgSlug}/my/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report someone's words or a person
+         * @description Reports a recording someone else wrote that you can open (a message, comment, document, file, to-do, card, event, answer, a line in a project's chat or a private chat, a group chat's name), a typed cheer someone else left, or another person you know in the organization. The report is kept with a copy of what it names as it read then, and is emailed to the organization's owners and admins (never you or the person it concerns) and to Thicket's support team. The person reported is never told. Nothing about the content or anyone's access changes. Refused: your own words or yourself (422 `invalid`), a note over 1,000 characters or none with `other` (422 `invalid`), 20 reports in the last hour (429 `rate_limited`), and anything you can't open (404).
+         */
+        post: operations["createReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/{orgSlug}/my/snoozes": {
@@ -5994,6 +6058,11 @@ export interface components {
             unread_count: number;
             /** @description Someone in it, you included, is in a company whose private chats are off: it stays readable and takes no new lines or files */
             frozen: boolean;
+            /**
+             * @description A one-to-one under a block: `by_you` while you blocked the other person (PUT /my/blocks/{membershipId}; DELETE lifts it), `by_them` while they blocked you. Either way it stays readable and takes no new lines, files, edits or deletions; posting answers 403 `chat_blocked`. Null for any other conversation, and for a group chat whatever its people's blocks
+             * @enum {string|null}
+             */
+            blocked: "by_you" | "by_them" | null;
             /** Format: date-time */
             updated_at: string;
         };
@@ -6876,6 +6945,8 @@ export interface components {
             role: components["schemas"]["OrgRole"];
             /** @description Works at the organization. False for an outside collaborator, whose role is `member` but who reaches only the projects they are on and can't make projects, add people or be an admin, and false for a client. */
             employee: boolean;
+            /** @description Whether you blocked this person (PUT /my/blocks/{membershipId}; DELETE lifts it). `GET /people/{membershipId}` alone carries it, and never says whether they blocked you. A block holds their private-chat lines, mentions and cheers back from you, and shuts a one-to-one private chat between you; nothing about the work changes. */
+            blocked?: boolean;
             /** @description Whether the person may use private chats. False while their company has private chats switched off (Admin › Permissions; `dms_disabled` on the company): they can start none, nobody can start one with them, and `POST /chats` naming them answers 403. Their existing conversations stay readable to everyone in them, with no new lines. */
             can_chat: boolean;
             /**
@@ -8157,6 +8228,52 @@ export interface components {
             /** Format: uuid */
             membership_id: string;
             person: string | null;
+        };
+        ReportRequest: {
+            /**
+             * @description What `subject_id` names: a recording, a cheer (`RecordingCheerRow.id`), or a person (a membership id)
+             * @enum {string}
+             */
+            subject_type: "recording" | "cheer" | "person";
+            /** Format: uuid */
+            subject_id: string;
+            /**
+             * @description Harassment or bullying, Hate or discrimination, Threats or violence, Sexual content, Spam or a scam, Private information shared, Something else
+             * @enum {string}
+             */
+            reason: "harassment" | "hate" | "threats" | "sexual" | "spam" | "private_information" | "other";
+            /** @description Up to 1,000 characters; required with `other` */
+            note?: string | null;
+        };
+        ReportReceipt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whom the report concerns while they are still in the organization, so a client can offer to block them: the person reported, or the author of what was reported; null for words no member wrote (the sample project's) and for someone since removed */
+            person: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string;
+            } | null;
+            /** @description Whether you already blocked that person */
+            person_blocked: boolean;
+        };
+        Block: {
+            person: {
+                /** Format: uuid */
+                membership_id: string;
+                name: string;
+                /** @description Same-origin avatar path or external URL; null means render an initials disc */
+                image: string | null;
+                /** @enum {string} */
+                kind: "person" | "agent";
+            };
+            /** Format: date-time */
+            blocked_at: string;
+        };
+        BlockList: {
+            blocks: components["schemas"]["Block"][];
         };
         /** @description Hours on a project, on one of its items, or as absence: a team-only recording. It counts while its item exists, goes to the trash and comes back with it, and moves with it. Clients never see one, and no generic `/recordings` route returns one. */
         TimesheetEntry: {
@@ -11351,6 +11468,87 @@ export interface operations {
             422: components["responses"]["Validation"];
         };
     };
+    listBlocks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Your blocks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    blockPerson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The person's membership id */
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The block */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Block"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+        };
+    };
+    unblockPerson: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+                /** @description The person's membership id */
+                membershipId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unblocked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listBookmarks: {
         parameters: {
             query?: never;
@@ -11992,6 +12190,38 @@ export interface operations {
             };
             401: components["responses"]["Unauthenticated"];
             422: components["responses"]["Validation"];
+        };
+    };
+    createReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The organization's URL slug, any earlier slug of it (each carries the organization's permanent `key` as its last segment), or the bare key; list yours via GET /api/v1/authorization or /api/v1/orgs. Resolved, never redirected: a path built from a slug that has since changed keeps working. */
+                orgSlug: components["parameters"]["orgSlug"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportRequest"];
+            };
+        };
+        responses: {
+            /** @description The report, and whom it concerns */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportReceipt"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Validation"];
+            429: components["responses"]["RateLimited"];
         };
     };
     listSnoozes: {
